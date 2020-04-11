@@ -11,6 +11,13 @@ function login(context) {
 	});
 }
 
+function getDeviceInfo(deviceId, token) {
+	return particle.getDevice({
+		deviceId: deviceId,
+		auth: token
+	});
+}
+
 function getTestData(deviceId, token) {
 	return particle.getVariable({
 		deviceId: deviceId,
@@ -939,43 +946,44 @@ function locate_device(context, cb, data) {
 		});
 }
 
-function register_device(context, cb, data) {
-	var result;
-	getDocument(context, context.body.coreid)
-		.then(function(device) {
-			if (!device) {
-				throw new Error ('FAILURE\n' + context.body.coreid + '\nDevice not found');
+function create_device(deviceId, data) {
+	const device = {};
+
+	console.log('create_device', deviceId, data);
+	device._id = deviceId;
+	device.name = data.name;
+	device.registeredOn = new Date();
+	device.particle = data;
+
+	return device;
+}
+
+function register_device(context, cb, deviceId) {
+	login(context)
+		.then(function(response) {
+			token = response.body.access_token;
+			return getDeviceInfo(deviceId, token);
+		})
+		.then(function(response) {
+			if (!response || !response.body || !response.body.result) {
+				throw new Error('FAILURE\n' + deviceId + '\nUnable to get device information');
 			}
-
-			var params = data.split(',');
-			var whenDate = params[0].split('/');
-			var whenTime = params[1].split(':');
-			var when = new Date(parseInt(whenDate[2]),parseInt(whenDate[0]),parseInt(whenDate[1]),parseInt(whenTime[0]),parseInt(whenTime[1]),parseInt(whenTime[2]));
-			var lat = parseFloat(params[2].slice(4));
-			var long = parseFloat(params[3].slice(5));
-			result = {
-				when: when,
-				latitude: lat,
-				longitude: long,
-				uncertainty: parseFloat(params[5].slice(12))
-			};
-			device.latestLocation = result;
-
-			return saveDocument(context, device);
+			return saveDocument(context, create_device(deviceId, response.body.result);
 		})
 		.then(function(response) {
 			console.log(response);
 			if (!response || !response.ok) {
-			  throw new Error('FAILURE\n' + context.body.coreid + '\Device location not updated');
+				throw new Error('FAILURE\n' + deviceId + '\nDevice registration not saved');
 			}
-			send_response(context, cb, 'device-location', 'SUCCESS', context.body.coreid + '\n' + result.when + '\t' + result.latitude + '\t' + result.longitude + '\t' + result.uncertainty);
+			send_response(context, cb, 'register-device', 'SUCCESS', deviceId);
 		})
 		.catch(function(error) {
 			if (error.message && error.message.slice(0,7) === 'FAILURE') {
-				send_response(context, cb, 'device-location', 'FAILURE', error.message.slice(8));
+				send_response(context, cb, 'register-device', 'FAILURE', error.message.slice(8));
 			}
 			else {
-				send_response(context, cb, 'device-location', 'ERROR', error);
+				error.deviceId = deviceId;
+				send_response(context, cb, 'register-device', 'ERROR', error);
 			}
 		});
 }
