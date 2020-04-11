@@ -939,6 +939,46 @@ function locate_device(context, cb, data) {
 		});
 }
 
+function register_device(context, cb, data) {
+	var result;
+	getDocument(context, context.body.coreid)
+		.then(function(device) {
+			if (!device) {
+				throw new Error ('FAILURE\n' + context.body.coreid + '\nDevice not found');
+			}
+
+			var params = data.split(',');
+			var whenDate = params[0].split('/');
+			var whenTime = params[1].split(':');
+			var when = new Date(parseInt(whenDate[2]),parseInt(whenDate[0]),parseInt(whenDate[1]),parseInt(whenTime[0]),parseInt(whenTime[1]),parseInt(whenTime[2]));
+			var lat = parseFloat(params[2].slice(4));
+			var long = parseFloat(params[3].slice(5));
+			result = {
+				when: when,
+				latitude: lat,
+				longitude: long,
+				uncertainty: parseFloat(params[5].slice(12))
+			};
+			device.latestLocation = result;
+
+			return saveDocument(context, device);
+		})
+		.then(function(response) {
+			console.log(response);
+			if (!response || !response.ok) {
+			  throw new Error('FAILURE\n' + context.body.coreid + '\Device location not updated');
+			}
+			send_response(context, cb, 'device-location', 'SUCCESS', context.body.coreid + '\n' + result.when + '\t' + result.latitude + '\t' + result.longitude + '\t' + result.uncertainty);
+		})
+		.catch(function(error) {
+			if (error.message && error.message.slice(0,7) === 'FAILURE') {
+				send_response(context, cb, 'device-location', 'FAILURE', error.message.slice(8));
+			}
+			else {
+				send_response(context, cb, 'device-location', 'ERROR', error);
+			}
+		});
+}
 function write_log(context, event_name, event_type, data) {
 	console.log('Creating new log entry', event_name);
 	var d = new Date();
@@ -985,6 +1025,9 @@ module.exports =
 
 		write_log(context, event_name, 'REQUEST', data);
 		switch (event_name) {
+			case 'register-device':
+				register_device(context, cb, data);
+				break;
 			case 'validate-cartridge':
 				validate_cartridge(context, cb, data);
 				break;
