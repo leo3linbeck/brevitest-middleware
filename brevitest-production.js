@@ -1,6 +1,6 @@
-var rp = require('request-promise-native');
-var Particle = require('particle-api-js');
-var particle = new Particle();
+const rp = require('request-promise-native');
+const Particle = require('particle-api-js');
+const particle = new Particle();
 
 // test Comment
 
@@ -11,8 +11,15 @@ function login(context) {
 	});
 }
 
+function getDeviceInfo(deviceId, token) {
+	return particle.getDevice({
+		deviceId: deviceId,
+		auth: token
+	});
+}
+
 function getTestData(deviceId, token) {
-	return particle.getVariable({
+	return particle.getconstiable({
 		deviceId: deviceId,
 		name: 'register',
 		auth: token
@@ -20,7 +27,7 @@ function getTestData(deviceId, token) {
 }
 
 function saveDocument(context, doc) {
-	var options = {
+	const options = {
 		uri: 'http://brevitestdatabase.com:5984/master_brevitest/' + doc._id,
 		method: 'PUT',
 		auth: {
@@ -34,7 +41,7 @@ function saveDocument(context, doc) {
 }
 
 function getDocument(context, docId) {
-	var options = {
+	const options = {
 		uri: 'http://brevitestdatabase.com:5984/master_brevitest/' + docId,
 		method: 'GET',
 		auth: {
@@ -46,7 +53,7 @@ function getDocument(context, docId) {
 	return rp(options);
 }
 
-var bcodeCommands = [{
+const bcodeCommands = [{
 	num: '0',
 	name: 'Start Test',
 	params: [],
@@ -164,9 +171,9 @@ var bcodeCommands = [{
 	description: 'Finishes the test. Required to be the final command.'
 }];
 
-var deviceParams;
+const deviceParams;
 
-var integrationDelay = {
+const integrationDelay = {
 	0xFF: 2.4,
 	/**<  2.4ms - 1 cycle    - Max Count: 1024  */
 	0xF6: 24,
@@ -187,9 +194,9 @@ function getBcodeCommand(cmd) {
 }
 
 function instructionTime(command, params) {
-	var d = 0;
-	var s = 0;
-	var i, j;
+	let d = 0;
+	let s = 0;
+	let i, j;
 	// jscs:disable requireCamelCaseOrUpperCaseIdentifiers
 	switch (command) {
 	case 'Delay': // delay
@@ -247,8 +254,8 @@ function instructionTime(command, params) {
 }
 
 function bcodeEstimatedTime(bcodeArray) {
-	var b, i;
-	var duration = 0;
+	let b, i;
+	let duration = 0;
 
 	for (i = 0; i < bcodeArray.length; i += 1) {
 		b = bcodeArray[i];
@@ -271,8 +278,8 @@ function paramString(params, keys) {
 }
 
 function compileInstruction(cmd, args) {
-	var command = getBcodeCommand(cmd);
-	var argKeys = Object.keys(args).filter(function(k) {
+	const command = getBcodeCommand(cmd);
+	const argKeys = Object.keys(args).filter(function(k) {
 		return k !== 'comment';
 	});
 	if (command.params.length !== argKeys.length) {
@@ -295,8 +302,8 @@ function compileRepeatEnd() {
 
 function compileRasterWell(params) {
 	// jscs:disable requireCamelCaseOrUpperCaseIdentifiers
-  var s;
-  var code = compileInstruction('Raster Well', {
+  let s;
+  let code = compileInstruction('Raster Well', {
 	  'total_steps': params.total_steps,
 	  'step_delay_us': params.step_delay_us,
 	  'number_of_rasters': params.number_of_rasters,
@@ -316,8 +323,8 @@ function compileRasterWell(params) {
 
 function compileWellTransit(params) {
 	// jscs:disable requireCamelCaseOrUpperCaseIdentifiers
-  var s;
-  var code = compileInstruction('Well Transit', {
+  let s;
+  let code = compileInstruction('Well Transit', {
 	  'step_delay_us': params.step_delay_us,
 	  'gather_time_ms': params.gather_time_ms,
 	  'segments': params.segments.length,
@@ -334,8 +341,8 @@ function compileWellTransit(params) {
 }
 
 function bcodeCompileArray(bcodeArray) {
-	var b, i;
-	var compiledCode = '';
+	let b, i;
+	let compiledCode = '';
 
 	for (i = 0; i < bcodeArray.length; i += 1) {
 		b = bcodeArray[i];
@@ -371,7 +378,7 @@ function bcodeCompile(bcode) {
 	return bcodeCompileArray(bcode.code);
 }
 
-var crc32tab = [
+const crc32tab = [
 	0x00000000, 0x77073096, 0xee0e612c, 0x990951ba,
 	0x076dc419, 0x706af48f, 0xe963a535, 0x9e6495a3,
 	0x0edb8832, 0x79dcb8a4, 0xe0d5e91e, 0x97d2d988,
@@ -439,7 +446,7 @@ var crc32tab = [
 ];
 
 function checksum(str) {
-    var crc = ~0, i, l;
+    let crc = ~0, i, l;
     for (i = 0, l = str.length; i < l; i++) {
         crc = (crc >>> 8) ^ crc32tab[(crc ^ str.charCodeAt(i)) & 0xff];
     }
@@ -448,8 +455,8 @@ function checksum(str) {
 }
 
 function generateTestString(cartridgeId, assay, testId) {
-	var code = cartridgeId + '\n';
-	var bcode, codeStr;
+	let code = cartridgeId + '\n';
+	let bcode, codeStr;
 
 	code += testId + '\t';
 
@@ -472,7 +479,7 @@ function generateTestString(cartridgeId, assay, testId) {
 }
 
 function randHexDigits(len) {
-    var i, result = '';
+    let i, result = '';
     for (i = 0; i < len; i += 1) {
         result += parseInt(Math.random() * 16).toString(16).toUpperCase();
     }
@@ -481,8 +488,8 @@ function randHexDigits(len) {
 
 function createTest(context, cartridge, assay) {
 	console.log('Creating new test', cartridge, assay);
-	var id = 'brevitst' + Date.now().toString() + randHexDigits(3);
-    var test = {
+	const id = 'brevitst' + Date.now().toString() + randHexDigits(3);
+    const test = {
         _id: id,
         schema: 'test',
         cartridge: cartridge,
@@ -505,9 +512,10 @@ function createTest(context, cartridge, assay) {
 }
 
 function validate_cartridge(context, cb, cartridgeId) {
-	var testId = null;
-	var cartridge = null;
-	var assay = null;
+	let testId = null;
+	let cartridge = null;
+	let assay = null;
+	
 
 	console.log('webtask_brevitest_validate');
 
@@ -553,7 +561,6 @@ function validate_cartridge(context, cb, cartridgeId) {
 				}
 			})
 			.then(function (test) {
-				var responseString;
 				if (!test) {
 					throw new Error('FAILURE\n' + cartridgeId + '\nTest record not found');
 				}
@@ -566,7 +573,7 @@ function validate_cartridge(context, cb, cartridgeId) {
 				if (test.status !== 'In queue') {
 					throw new Error('FAILURE\n' + cartridgeId + '\nCartridge has not been queued');
 				}
-				responseString = generateTestString(cartridgeId, assay, test._id);
+				const responseString = generateTestString(cartridgeId, assay, test._id);
 				console.log('validate-cartridge', 'SUCCESS', responseString);
 				send_response(context, cb, 'validate-cartridge', 'SUCCESS', responseString);
 			})
@@ -591,7 +598,7 @@ function validate_cartridge(context, cb, cartridgeId) {
 }
 
 function start_test(context, cb, testId) {
-	var cartridgeId, device;
+	let cartridgeId, device;
 
 	console.log('webtask_brevitest, test-start');
 	console.log(testId);
@@ -663,7 +670,7 @@ function start_test(context, cb, testId) {
 }
 
 function finish_test(context, cb, testId) {
-	var cartridgeId;
+	let cartridgeId;
 
 	console.log('webtask_brevitest, test-finish');
 
@@ -711,7 +718,7 @@ function finish_test(context, cb, testId) {
 }
 
 function cancel_test(context, cb, testId) {
-	var cartridgeId;
+	let cartridgeId;
 
 	console.log('webtask_brevitest, test-cancel');
 
@@ -758,7 +765,7 @@ function cancel_test(context, cb, testId) {
 }
 
 function parseReading(line) {
-	var attr = line.split('\t');
+	const attr = line.split('\t');
 	if (attr.length === 8) {
 		return {
 			channel: attr[0],
@@ -784,8 +791,9 @@ function parseReading(line) {
 }
 
 function parseData(str, testId) {
-    var attr, i, lines;
-    var result = {};
+	const attr;
+	const lines;
+	const result = {};
 
 	lines = str.split('\n');
     attr = lines[0].split('\t');
@@ -798,7 +806,7 @@ function parseData(str, testId) {
 	}
 	result.number_of_readings = lines.length - 2;
 	result.readings = [];
-	for (i = 0; i < result.number_of_readings; i += 1) {
+	for (let i = 0; i < result.number_of_readings; i += 1) {
 		result.readings.push(parseReading(lines[i + 1]));
 	}
     return result;
@@ -824,8 +832,8 @@ function calculateResults(data) {
 };
 
 function upload_test(context, cb, testId) {
-	var token, result;
-	var deviceId = context.body.coreid;
+	let token, result;
+	let deviceId = context.body.coreid;
 
 	console.log('webtask_brevitest, upload-test');
 
@@ -899,19 +907,19 @@ function upload_test(context, cb, testId) {
 }
 
 function locate_device(context, cb, data) {
-	var result;
+	let result;
 	getDocument(context, context.body.coreid)
 		.then(function(device) {
 			if (!device) {
 				throw new Error ('FAILURE\n' + context.body.coreid + '\nDevice not found');
 			}
 
-			var params = data.split(',');
-			var whenDate = params[0].split('/');
-			var whenTime = params[1].split(':');
-			var when = new Date(parseInt(whenDate[2]),parseInt(whenDate[0]),parseInt(whenDate[1]),parseInt(whenTime[0]),parseInt(whenTime[1]),parseInt(whenTime[2]));
-			var lat = parseFloat(params[2].slice(4));
-			var long = parseFloat(params[3].slice(5));
+			const params = data.split(',');
+			const whenDate = params[0].split('/');
+			const whenTime = params[1].split(':');
+			const when = new Date(parseInt(whenDate[2]),parseInt(whenDate[0]),parseInt(whenDate[1]),parseInt(whenTime[0]),parseInt(whenTime[1]),parseInt(whenTime[2]));
+			const lat = parseFloat(params[2].slice(4));
+			const long = parseFloat(params[3].slice(5));
 			result = {
 				when: when,
 				latitude: lat,
@@ -939,11 +947,52 @@ function locate_device(context, cb, data) {
 		});
 }
 
+function create_device(deviceId, data) {
+	const device = {};
+
+	console.log('create_device', deviceId, data);
+	device._id = deviceId;
+	device.name = data.name;
+	device.registeredOn = new Date();
+	device.particle = data;
+
+	return device;
+}
+
+function register_device(context, cb, deviceId) {
+	login(context)
+		.then(function(response) {
+			token = response.body.access_token;
+			return getDeviceInfo(deviceId, token);
+		})
+		.then(function(response) {
+			if (!response || !response.body || !response.body.result) {
+				throw new Error('FAILURE\n' + deviceId + '\nUnable to get device information');
+			}
+			return saveDocument(context, create_device(deviceId, response.body.result);
+		})
+		.then(function(response) {
+			console.log(response);
+			if (!response || !response.ok) {
+				throw new Error('FAILURE\n' + deviceId + '\nDevice registration not saved');
+			}
+			send_response(context, cb, 'register-device', 'SUCCESS', deviceId);
+		})
+		.catch(function(error) {
+			if (error.message && error.message.slice(0,7) === 'FAILURE') {
+				send_response(context, cb, 'register-device', 'FAILURE', error.message.slice(8));
+			}
+			else {
+				error.deviceId = deviceId;
+				send_response(context, cb, 'register-device', 'ERROR', error);
+			}
+		});
+}
 function write_log(context, event_name, event_type, data) {
 	console.log('Creating new log entry', event_name);
-	var d = new Date();
-	var id = 'log_' + d.toISOString();
-    var log_entry = {
+	const d = new Date();
+	const id = 'log_' + d.toISOString();
+    const log_entry = {
         _id: id,
         schema: 'log',
 		loggedOn: d,
@@ -956,7 +1005,7 @@ function write_log(context, event_name, event_type, data) {
 }
 
 function send_response(context, cb_fcn, event_name, event_type, data) {
-	var response = 	event_name + '\n' + event_type + '\n';
+	let response = 	event_name + '\n' + event_type + '\n';
 
 	if (typeof(data) === 'object') {
 		response += JSON.stringify(data) + '\n';
@@ -979,12 +1028,15 @@ function send_response(context, cb_fcn, event_name, event_type, data) {
 module.exports =
 	function (context, cb) {
 	  console.log('context', context);
-		var indx = context.body.data.indexOf('\n');
-		var event_name = context.body.data.slice(0, indx);
-		var data = context.body.data.slice(indx + 1);
+		const indx = context.body.data.indexOf('\n');
+		const event_name = context.body.data.slice(0, indx);
+		const data = context.body.data.slice(indx + 1);
 
 		write_log(context, event_name, 'REQUEST', data);
 		switch (event_name) {
+			case 'register-device':
+				register_device(context, cb, data);
+				break;
 			case 'validate-cartridge':
 				validate_cartridge(context, cb, data);
 				break;
