@@ -4,10 +4,10 @@ const particle = new Particle();
 
 // test Comment
 
-const login = (context) => {
+const login = () => {
 	return particle.login({
-		username: context.secrets.PARTICLE_USERNAME,
-		password: context.secrets.PARTICLE_PASSWORD
+		client_id: 'brevitest-development-9403',
+		client_secret: 'f666a1eb5b76fd0ac9deffb8aee70fcc07baa5eb'
 	});
 }
 
@@ -19,7 +19,7 @@ const getDeviceInfo = (deviceId, token) => {
 }
 
 const getTestData = (deviceId, token) => {
-	return particle.getconstiable({
+	return particle.getDeviceInfo({
 		deviceId: deviceId,
 		name: 'register',
 		auth: token
@@ -270,14 +270,15 @@ const generateTestString = (cartridgeId, assay, testId) => {
 }
 const randHexDigits = (len) => {
     return [...Array(Math.round(len)).keys()].reduce((hex) => {
-        hex + parseInt(Math.floor(Math.random() * 16)).toString(16).toUpperCase()
+        hex + parseInt(Math.floor(Math.random() * 16), 16).toString().toUpperCase()
     }, '')
 }
 
 const createTest = (device, cartridge, assay) => {
     console.log('Creating new test', device, cartridge, assay);
     
-	const _id = `${device.customer_id}-${Date.now().toString()}-${randHexDigits(3)}`;
+    // Test primary key: customer_id from Particle ()
+	const _id = `${device.customer_id}-${parseInt(Date.now(), 16).toString()}-${randHexDigits(3)}`;
     const test = {
         _id,
         schema: 'test',
@@ -289,12 +290,12 @@ const createTest = (device, cartridge, assay) => {
     };
 
 	return saveDocument(test)
-		.then(function(response) {
+		.then((response) => {
 			test._rev = response.rev;
 			cartridge.testId = test._id;
 			return saveDocument(cartridge);
 		})
-		.then(function(response) {
+		.then((response) => {
 			cartridge._rev = response.rev;
 			return test;
 		});
@@ -305,258 +306,231 @@ const validate_cartridge = (callback, deviceId, cartridgeId) => {
 
 	if (!cartridgeId) {
         send_response(callback, 'validate-cartridge', `FAILURE: Cartridge ID missing`);
-        return;
-    }
-	if (!deviceId) {
+    } else if (!deviceId) {
         send_response(callback, 'validate-cartridge', `FAILURE: Device ID missing`);
-        return;
-    }
-    const assayId = cartridgeId.slice(0, 8);
+    } else {
+        const assayId = cartridgeId.slice(0, 8);
 
-    getDocument(deviceId)
-        .then(function (device) {
-            if (!device) {
-                throw new Error(`FAILURE: Device ${deviceId} not found`);
-            }
-            if (device._id !== deviceId) {
-                throw new Error(`FAILURE: Device ${deviceId} mismatch`);
-            }
-            if (!device.customer_id) {
-                throw new Error(`FAILURE: Customer ID for device ${deviceId} is missing`);
-            }
-
-            return { device, cartridge: getDocument(cartridgeId) };
-        })
-        .then(function ({ device, cartridge }) {
-            if (!cartridge) {
-                throw new Error(`FAILURE: Cartridge ${cartridgeId} not found`);
-            }
-            if (cartridge._id !== cartridgeId) {
-                throw new Error(`FAILURE: Cartridge ${cartridgeId} mismatch`);
-            }
-            if (cartridge.used) {
-                throw new Error(`FAILURE: Cartridge ${cartridgeId} already used`);
-            }
-
-            return { device, cartridge, assay: getDocument(assayId) };
-        })
-        .then(function ({ device, cartridge, assay }) {
-            if (!assay) {
-                throw new Error(`FAILURE: Assay ${assayId} not found`);
-            }
-            if (assay._id !== assayId) {
-                throw new Error(`FAILURE: Assay ${cartridgeId} mismatch`);
-            }
-            // VERIFY FOR VARIOUS USE CASES (PRESCANNED AND POSTSCANNED)
-            if (cartridge.testId) {
-                console.log('cartridge.testId', cartridge.testId);
-                return getDocument(context, cartridge.testId);
-            }
-            else {
-                console.log('creating new test');
-                return { assay, test: createTest(device, cartridge, assay) };
-            }
-        })
-        .then(function ({ assay, test }) {
-            if (!test) {
-                throw new Error(`FAILURE: Test for cartridge ${cartridgeId} not found`);
-            }
-            if (test._id !== cartridge.testId) {
-                throw new Error(`FAILURE: Test mismatch for cartridge ${cartridgeId}`);
-            }
-            if (test.status !== 'In queue') {
-                throw new Error(`FAILURE: Cartridge ${cartridgeId} has not been queued`);
-            }
-            const responseString = generateTestString(cartridgeId, assay, test._id);
-            console.log('validate-cartridge', 'SUCCESS', responseString);
-            send_response(callback, 'validate-cartridge', 'SUCCESS', responseString);
-        })
-        .catch(function (error) {
-            console.log(error);
-            if (error.message && error.message.slice(0,7) === 'FAILURE') {
-                send_response(callback, 'validate-cartridge', 'FAILURE', error.message.slice(8));
-            }
-            else {
-                if (error.statusCode && error.statusCode === 404) {
-                    send_response(callback, 'validate-cartridge', 'FAILURE', cartridgeId + '\n' + error.message.slice(8));
+        getDocument(deviceId)
+            .then((device) => {
+                if (!device) {
+                    throw new Error(`FAILURE: Device ${deviceId} not found`);
+                } else if (device._id !== deviceId) {
+                    throw new Error(`FAILURE: Device ${deviceId} mismatch`);
+                } else if (!device.customerId) {
+                    throw new Error(`FAILURE: Customer ID for device ${deviceId} is missing`);
                 }
-                else {
+    
+                return { device, customer: getDocument(customerId) };
+            })
+            .then(({ device, customer }) => {
+                if (!customer) {
+                    throw new Error(`FAILURE: Customer ${customerId} not found`);
+                } else if (customer._id !== customerId) {
+                    throw new Error(`FAILURE: Customer ${customerId} mismatch`);
+                }
+    
+                return { device, customer, cartridge: getDocument(cartridgeId) };
+            })
+            .then(({ device, customer, cartridge }) => {
+                if (!cartridge) {
+                    throw new Error(`FAILURE: Cartridge ${cartridgeId} not found`);
+                } else if (cartridge._id !== cartridgeId) {
+                    throw new Error(`FAILURE: Cartridge ${cartridgeId} mismatch`);
+                } else if (cartridge.used) {
+                    throw new Error(`FAILURE: Cartridge ${cartridgeId} already used`);
+                } else if (cartridge.customerId !== customer._id) {
+                    throw new Error(`FAILURE: Cartridge ${cartridgeId} does not belong to this customer`);
+                }
+    
+                return { device, cartridge, assay: getDocument(assayId) };
+            })
+            .then(({ device, cartridge, assay }) => {
+                if (!assay) {
+                    throw new Error(`FAILURE: Assay ${assayId} not found`);
+                } else if (assay._id !== assayId) {
+                    throw new Error(`FAILURE: Assay ${cartridgeId} mismatch`);
+                }
+                // VERIFY FOR VARIOUS USE CASES (PRESCANNED AND POSTSCANNED)
+                if (cartridge.testId) {
+                    console.log('cartridge.testId', cartridge.testId);
+                    return getDocument(context, cartridge.testId);
+                } else {
+                    console.log('creating new test');
+                    return { assay, test: createTest(device, cartridge, assay) };
+                }
+            })
+            .then(({ assay, test }) => {
+                if (!test) {
+                    throw new Error(`FAILURE: Test for cartridge ${cartridgeId} not found`);
+                } else if (test._id !== cartridge.testId) {
+                    throw new Error(`FAILURE: Test mismatch for cartridge ${cartridgeId}`);
+                } else if (test.status !== 'In queue') {
+                    throw new Error(`FAILURE: Cartridge ${cartridgeId} has not been queued`);
+                }
+    
+                const responseString = generateTestString(cartridgeId, assay, test._id);
+                console.log('validate-cartridge', 'SUCCESS', responseString);
+                send_response(callback, 'validate-cartridge', 'SUCCESS', responseString);
+            })
+            .catch((error) => {
+                console.log(error);
+                if (error.message && error.message.slice(0,7) === 'FAILURE') {
+                    send_response(callback, 'validate-cartridge', 'FAILURE', error.message.slice(8));
+                } else if (error.statusCode && error.statusCode === 404) {
+                    send_response(callback, 'validate-cartridge', 'FAILURE', cartridgeId + '\n' + error.message.slice(8));
+                } else {
                     error.cartridgeId = cartridgeId;
                     send_response(callback, 'validate-cartridge', 'ERROR', error);
                 }
-            }
-        });
-	}
+            });
+    }
 }
 
-const start_test = (context, cb, testId) => {
-	let cartridgeId, device;
+const start_test = (callback, deviceId, testId) => {
+    console.log('start_test', deviceId, testId);
 
-	console.log('webtask_brevitest, test-start');
-	console.log(testId);
-	if (!context.body.coreid) {
-		send_response(context, cb, 'test-start', 'FAILURE', testId + '\nNo device id found');
-	}
-
-	getDocument(context, context.body.coreid)
-		.then(function(d) {
-			if (!d) {
-				throw new Error ('FAILURE\n' + context.body.coreid + '\nDevice not found');
+	if (!deviceId) {
+        send_response(callback, 'start-test', `FAILURE: Device ID missing`);
+    } else if (!testId) {
+        send_response(callback, 'start-test', `FAILURE: Test ID missing`);
+    } else {
+        getDocument(deviceId)
+		.then((device) => {
+			if (!device) {
+                throw new Error(`FAILURE: Device ${deviceId} not found`);
 			}
-			device = d;
-
-			if (!testId) {
-				throw new Error('FAILURE\n' + testId + '\nNo test id found');
-			}
-			return getDocument(context, testId);
+			return { device, test: getDocument(testId) };
 		})
-		.then(function(test) {
+		.then(({ device, test }) => {
 			if (!test) {
-				throw new Error ('FAILURE\n' + testId + '\nTest not found');
-			}
-			else if (!test.cartridge) {
-				throw new Error ('FAILURE\n' + testId + '\nTest cartridge not found');
-			}
-			else if (!test.cartridge._id) {
-				throw new Error ('FAILURE\n' + testId + '\nTest cartridge ID not found');
-			}
+                throw new Error(`FAILURE: Test ${testId} not found`);
+			} else if (!test.cartridge) {
+                throw new Error(`FAILURE: Cartridge for test ${testId} not found`);
+			} else if (!test.cartridge._id) {
+                throw new Error(`FAILURE: Cartridge ID for test ${testId} not found`);
+            }
 
 			test.device = device;
 			test.status = 'In progress';
 			test.percentComplete = 0;
 			test.startedOn = new Date();
-			cartridgeId = test.cartridge._id;
-			return saveDocument(context, test);
+			return { test, response: saveDocument(test) };
 		})
-		.then(function(response) {
+		.then(({ test, response }) => {
 			console.log(response);
 			if (!response || !response.ok) {
-				throw new Error ('FAILURE\n' + testId + '\nTest not saved');
-			}
-			return getDocument(context, cartridgeId);
+                throw new Error(`FAILURE: Test ${testId} not saved`);
+            }
+			return getDocument(test.cartridge._id);
 		})
-		.then(function(cartridge) {
+		.then((cartridge) => {
 			if (!cartridge) {
-				throw new Error ('FAILURE\n' + testId + '\nCartridge not found');
+                throw new Error(`FAILURE: Cartridge for tests ${testId} not found`);
 			}
 			cartridge.used = true;
-			return saveDocument(context, cartridge);
+			return saveDocument(cartridge);
 		})
-		.then(function(response) {
+		.then((response) => {
 			console.log(response);
 			if (!response || !response.ok) {
-				throw new Error ('FAILURE\n' + testId + '\nTest not saved');
+                throw new Error(`FAILURE: Cartridge for ${testId} not saved`);
 			}
-			send_response(context, cb, 'test-start', 'SUCCESS', testId);
+			send_response(callback, 'test-start', 'SUCCESS', testId);
 		})
-		.catch(function(error) {
+		.catch((error) => {
 			console.log(error);
 			if (error.message && error.message.slice(0,7) === 'FAILURE') {
-				send_response(context, cb, 'test-start', 'FAILURE', error.message.slice(8));
-			}
-			else {
+				send_response(callback, 'test-start', 'FAILURE', error.message.slice(8));
+			} else {
 				error.testId = testId;
-				send_response(context, cb, 'test-start', 'ERROR', error);
+				send_response(callback, 'test-start', 'ERROR', error);
 			}
-		});
+		});    }
 }
 
-function finish_test(context, cb, testId) {
-	let cartridgeId;
-
-	console.log('webtask_brevitest, test-finish');
+const finish_test = (callback, testId) => {
+	console.log('test-finish', testId);
 
 	if (!testId) {
-		send_response(context, cb, 'test-finish', 'FAILURE', 'No test id');
-	}
-	else {
-		getDocument(context, testId)
-			.then(function(test) {
-				if (!test) {
-					throw new Error ('FAILURE\n' + testId + '\nTest not found');
-				}
-				if (!test.cartridge) {
-					throw new Error ('FAILURE\n' + testId + '\nTest cartridge not found');
-				}
-				if (!test.cartridge._id) {
-					throw new Error ('FAILURE\n' + testId + '\nTest cartridge ID not found');
-				}
-
+		send_response(callback, 'test-finish', 'FAILURE', 'No test id');
+	} else {
+		getDocument(testId)
+			.then((test) => {
+                if (!test) {
+                    throw new Error(`FAILURE: Test ${testId} not found`);
+                } else if (!test.cartridge) {
+                    throw new Error(`FAILURE: Cartridge for test ${testId} not found`);
+                } else if (!test.cartridge._id) {
+                    throw new Error(`FAILURE: Cartridge ID for test ${testId} not found`);
+                }
+    
 				test.status = 'Awaiting results';
 				test.percentComplete = 100;
 				test.finishedOn = new Date();
 
-				console.log('completed test', test);
-				return saveDocument(context, test);
+				return saveDocument(test);
 			})
-			.then(function(response) {
+			.then((response) => {
 				console.log(response);
-				if (!response || !response.ok) {
-					throw new Error ('FAILURE\n' + testId + '\nTest not saved');
-				}
-				send_response(context, cb, 'test-finish', 'SUCCESS', testId);
+                if (!response || !response.ok) {
+                    throw new Error(`FAILURE: Test ${testId} not saved`);
+                }
+                send_response(callback, 'test-finish', 'SUCCESS', testId);
 			})
-			.catch(function(error) {
+			.catch((error) => {
 				console.log(error);
 				if (error.message && error.message.slice(0,7) === 'FAILURE') {
-					send_response(context, cb, 'test-finish', 'FAILURE', error.message.slice(8));
-				}
-				else {
+					send_response(callback, 'test-finish', 'FAILURE', error.message.slice(8));
+				} else {
 					error.testId = testId;
-					send_response(context, cb, 'test-finish', 'ERROR', error);
+					send_response(callback, 'test-finish', 'ERROR', error);
 				}
 			});
 	}
 }
 
-function cancel_test(context, cb, testId) {
-	let cartridgeId;
-
-	console.log('webtask_brevitest, test-cancel');
+const cancel_test = (callback, testId) => {
+	console.log('test-cancel', testId);
 
 	if (!testId) {
-		send_response(context, cb, 'test-cancel', 'FAILURE', 'No test id');
-	}
-	else {
-		getDocument(context, testId)
-			.then(function(test) {
-				if (!test) {
-					throw new Error ('FAILURE\n' + testId + '\nTest not found');
-				}
-				if (!test.cartridge) {
-					throw new Error ('FAILURE\n' + testId + '\nTest cartridge not found');
-				}
-				if (!test.cartridge._id) {
-					throw new Error ('FAILURE\n' + testId + '\nTest cartridge ID not found');
-				}
+		send_response(callback, 'test-cancel', 'FAILURE', 'No test id');
+	} else {
+		getDocument(testId)
+			.then((test) => {
+                if (!test) {
+                    throw new Error(`FAILURE: Test ${testId} not found`);
+                } else if (!test.cartridge) {
+                    throw new Error(`FAILURE: Cartridge for test ${testId} not found`);
+                } else if (!test.cartridge._id) {
+                    throw new Error(`FAILURE: Cartridge ID for test ${testId} not found`);
+                }
 
 				test.status = 'Cancelled';
 				test.finishedOn = new Date();
 
-				console.log('cancelled test', test);
-				return saveDocument(context, test);
+				return saveDocument(test);
 			})
-			.then(function(response) {
+			.then((response) => {
 				console.log(response);
-				if (!response || !response.ok) {
-					throw new Error ('FAILURE\n' + testId + '\nTest not saved');
-				}
-				send_response(context, cb, 'test-cancel', 'SUCCESS', testId);
+                if (!response || !response.ok) {
+                    throw new Error(`FAILURE: Test ${testId} not saved`);
+                }
+				send_response(callback, 'test-cancel', 'SUCCESS', testId);
 			})
-			.catch(function(error) {
+			.catch((error) => {
 				console.log(error);
 				if (error.message && error.message.slice(0,7) === 'FAILURE') {
-					send_response(context, cb, 'test-cancel', 'FAILURE', error.message.slice(8));
-				}
-				else {
+					send_response(callback, 'test-cancel', 'FAILURE', error.message.slice(8));
+				} else {
 					error.testId = testId;
-					send_response(context, cb, 'test-cancel', 'ERROR', error);
+					send_response(callback, 'test-cancel', 'ERROR', error);
 				}
 			});
 	}
 }
 
-function parseReading(line) {
+const parseReading = (line) => {
 	const attr = line.split('\t');
 	if (attr.length === 8) {
 		return {
@@ -569,8 +543,7 @@ function parseReading(line) {
 			clear_max: parseInt(attr[6]),
 			clear_min: parseInt(attr[7])
 		};
-	}
-	else {
+	} else {
 		return {
 			channel: attr[0],
 			time: Date(parseInt(attr[1])),
@@ -582,7 +555,7 @@ function parseReading(line) {
 	}
 }
 
-function parseData(str, testId) {
+const parseData = (str, testId) => {
 	const attr;
 	const lines;
 	const result = {};
@@ -604,15 +577,13 @@ function parseData(str, testId) {
     return result;
 }
 
-function square(a) {
-	return a * a;
-}
+const square = a => a * a;
 
-function xyzDiff(r1, r2) {
+const xyzDiff = (r1, r2) => {
 	return Math.sqrt(square(r1.x - r2.x) + square(r1.y - r2.y) + square(r1.z - r2.z));
 }
 
-function calculateResults(data) {
+const calculateResults = (data) => {
 	if (data.length !== 4) {
 		return 'Invalid result - more than two readings of two channels';
 	}
@@ -623,232 +594,169 @@ function calculateResults(data) {
 	return Math.round(100000 * (xyzDiff(data[1], data[3]) - xyzDiff(data[0], data[2])), 0);
 };
 
-function upload_test(context, cb, testId) {
-	let token, result;
-	let deviceId = context.body.coreid;
-
-	console.log('webtask_brevitest, upload-test');
+const upload_test = (callback, deviceId, testId) => {
+	console.log('upload-test', deviceId, testId);
 
 	if (!deviceId) {
-		send_response(context, cb, 'test-upload', 'FAILURE', 'No device id');
-	}
-	else if (!testId) {
-		send_response(context, cb, 'test-upload', 'FAILURE', 'No test id');
-	}
-	else {
-		login(context)
-		  .then(function(response) {
-			  token = response.body.access_token;
-			  return getTestData(deviceId, token);
-		  })
-		  .then(function(response) {
-			  if (!response || !response.body || !response.body.result) {
-				throw new Error('FAILURE\n' + testId + '\nUnable to get test data from device');
-			  }
-			  result = parseData(response.body.result, testId);
-			  if (result.testId !== testId) {
-				throw new Error('FAILURE\n' + testId + '\nTest ID in device does not match test ID requested');
-			  }
-			  delete result.testId;
-			  return getDocument(context, testId);
-		  })
-		  .then(function(test) {
-			  if (!test) {
-				throw new Error('FAILURE\n' + testId + '\nTest not found');
-			  }
-			  test.rawData = result;
-			  if (result && result.readings) {
-				  test.readout = calculateResults(test.rawData.readings);
-			  }
-			  else {
-				  test.readout = '';
-			  }
-			  if (typeof test.readout !== 'number') {
-				  test.result = 'Unknown';
-			  }
-			  else if (test.readout > test.assay.standardCurve.cutScores.redMax || test.readout < test.assay.standardCurve.cutScores.redMin) {
-				  test.result = 'Positive';
-			  }
-			  else if (test.readout > test.assay.standardCurve.cutScores.greenMax || test.readout < test.assay.standardCurve.cutScores.greenMin) {
-				  test.result = 'Borderline';
-			  }
-			  else {
-				  test.result = 'Negative';
-			  }
-		  	  test.status = 'Complete';
-			  console.log(test);
-			  return saveDocument(context, test);
-		  })
-		  .then(function(response) {
-			  console.log(response);
-			  if (!response || !response.ok) {
-				throw new Error('FAILURE\n' + testId + '\nTest not saved');
-			  }
-			  send_response(context, cb, 'test-upload', 'SUCCESS', testId);
-		  })
-		  .catch(function(error) {
-			  if (error.message && error.message.slice(0,7) === 'FAILURE') {
-				  send_response(context, cb, 'test-upload', 'FAILURE', error.message.slice(8));
-			  }
-			  else {
-				  error.testId = testId;
-				  send_response(context, cb, 'test-upload', 'ERROR', error);
-			  }
-		  });
+		send_response(callback, 'test-upload', 'FAILURE', 'No device id');
+	} else if (!testId) {
+		send_response(callback, 'test-upload', 'FAILURE', 'No test id');
+	} else {
+		login(deviceId)
+            .then((response) => {
+                token = response.body.access_token;
+                return getTestData(deviceId, token);
+            })
+            .then((response) => {
+                if (!response || !response.body || !response.body.result) {
+                throw new Error(`FAILURE: Unable to get test ${testId} from device ${deviceId}`);
+                }
+                result = parseData(response.body.result, testId);
+                if (result.testId !== testId) {
+                throw new Error(`FAILURE: Test ID ${testId} in device ${deviceId} does not match ID requested`);
+                }
+                delete result.testId;
+                return { result, test: getDocument(testId) };
+            })
+            .then(({ result, test }) => {
+                if (!test) {
+                    throw new Error(`FAILURE: Test ${testId} not found`);
+                }
+                test.rawData = result;
+                test.readout = (result && result.readings) ? calculateResults(test.rawData.readings) : '';
+                
+                if (typeof test.readout !== 'number') {
+                    test.result = 'Unknown';
+                } else if (test.readout > test.assay.standardCurve.cutScores.redMax || test.readout < test.assay.standardCurve.cutScores.redMin) {
+                    test.result = 'Positive';
+                } else if (test.readout > test.assay.standardCurve.cutScores.greenMax || test.readout < test.assay.standardCurve.cutScores.greenMin) {
+                    test.result = 'Borderline';
+                } else {
+                    test.result = 'Negative';
+                }
+                test.status = 'Complete';
+                return saveDocument(test);
+            })
+            .then((response) => {
+                console.log(response);
+                if (!response || !response.ok) {
+                    throw new Error(`FAILURE: Test ${testId} not saved`);
+                }
+                send_response(callback, 'test-upload', 'SUCCESS', testId);
+            })
+            .catch((error) => {
+                if (error.message && error.message.slice(0,7) === 'FAILURE') {
+                    send_response(callback, 'test-upload', 'FAILURE', error.message.slice(8));
+                } else {
+                    error.testId = testId;
+                    send_response(callback, 'test-upload', 'ERROR', error);
+                }
+            });
 	}
 }
 
-function locate_device(context, cb, data) {
-	let result;
-	getDocument(context, context.body.coreid)
-		.then(function(device) {
-			if (!device) {
-				throw new Error ('FAILURE\n' + context.body.coreid + '\nDevice not found');
-			}
-
-			const params = data.split(',');
-			const whenDate = params[0].split('/');
-			const whenTime = params[1].split(':');
-			const when = new Date(parseInt(whenDate[2]),parseInt(whenDate[0]),parseInt(whenDate[1]),parseInt(whenTime[0]),parseInt(whenTime[1]),parseInt(whenTime[2]));
-			const lat = parseFloat(params[2].slice(4));
-			const long = parseFloat(params[3].slice(5));
-			result = {
-				when: when,
-				latitude: lat,
-				longitude: long,
-				uncertainty: parseFloat(params[5].slice(12))
-			};
-			device.latestLocation = result;
-
-			return saveDocument(context, device);
-		})
-		.then(function(response) {
-			console.log(response);
-			if (!response || !response.ok) {
-			  throw new Error('FAILURE\n' + context.body.coreid + '\Device location not updated');
-			}
-			send_response(context, cb, 'device-location', 'SUCCESS', context.body.coreid + '\n' + result.when + '\t' + result.latitude + '\t' + result.longitude + '\t' + result.uncertainty);
-		})
-		.catch(function(error) {
-			if (error.message && error.message.slice(0,7) === 'FAILURE') {
-				send_response(context, cb, 'device-location', 'FAILURE', error.message.slice(8));
-			}
-			else {
-				send_response(context, cb, 'device-location', 'ERROR', error);
-			}
-		});
-}
-
-function create_device(deviceId, data) {
+const create_device = (deviceId, data) => {
 	const device = {};
 
 	console.log('create_device', deviceId, data);
 	device._id = deviceId;
 	device.name = data.name;
 	device.registeredOn = new Date();
-	device.particle = data;
+    device.particle = data;
+    device.customerId = null;
 
 	return device;
 }
 
-function register_device(context, cb, deviceId) {
-	login(context)
-		.then(function(response) {
+const register_device = (callback, deviceId) => {
+	login()
+		.then((response) => {
 			token = response.body.access_token;
 			return getDeviceInfo(deviceId, token);
 		})
-		.then(function(response) {
+		.then((response) => {
 			if (!response || !response.body || !response.body.result) {
-				throw new Error('FAILURE\n' + deviceId + '\nUnable to get device information');
-			}
-			return saveDocument(context, create_device(deviceId, response.body.result);
+				throw new Error(`FAILURE: Unable to get information for device ${deviceId}`);
+            }
+            const device = create_device(deviceId, response.body.result);
+			return saveDocument(device);
 		})
-		.then(function(response) {
+		.then((response) => {
 			console.log(response);
 			if (!response || !response.ok) {
-				throw new Error('FAILURE\n' + deviceId + '\nDevice registration not saved');
+                throw new Error(`FAILURE: Device ${deviceId} not saved`);
 			}
-			send_response(context, cb, 'register-device', 'SUCCESS', deviceId);
+			send_response(callback, 'register-device', 'SUCCESS', deviceId);
 		})
-		.catch(function(error) {
+		.catch((error) => {
 			if (error.message && error.message.slice(0,7) === 'FAILURE') {
 				send_response(context, cb, 'register-device', 'FAILURE', error.message.slice(8));
-			}
-			else {
+			} else {
 				error.deviceId = deviceId;
 				send_response(context, cb, 'register-device', 'ERROR', error);
 			}
 		});
 }
-function write_log(context, event_name, event_type, data) {
-	console.log('Creating new log entry', event_name);
-	const d = new Date();
-	const id = 'log_' + d.toISOString();
+const write_log = (event_name, event_type, data) => {
+	console.log('write_log', event_name, event_type, data);
+	const loggedOn = new Date();
+	const _id = 'log_' + d.toISOString();
     const log_entry = {
-        _id: id,
+        _id,
         schema: 'log',
-		loggedOn: d,
+		loggedOn,
 		event: event_name,
 		type: event_type,
-        data: data
+        data
     };
 
-	return saveDocument(context, log_entry);
+	return saveDocument(log_entry);
 }
 
-function send_response(context, cb_fcn, event_name, event_type, data) {
-	let response = 	event_name + '\n' + event_type + '\n';
+function send_response(callback, event_name, event_type, data) {
+	const response = event_name + ':' + event_type + ':' + (typeof(data) === 'object' ? JSON.stringify(data) : data);
 
-	if (typeof(data) === 'object') {
-		response += JSON.stringify(data) + '\n';
-	}
-	else {
-		response += data + '\n';
-	}
-
-	write_log(context, event_name, event_type, data);
+	write_log(event_name, event_type, data);
 
 	console.log('response', response);
 	if (event_type === 'ERROR') {
-		cb_fcn(response);
-	}
-	else {
-		cb_fcn(null, response);
+		callback(response);
+	} else {
+		callback(null, response);
 	}
 }
 
 module.exports =
-	function (context, cb) {
-	  console.log('context', context);
+	function (event, context, callback) {
 		const indx = context.body.data.indexOf('\n');
 		const event_name = context.body.data.slice(0, indx);
 		const data = context.body.data.slice(indx + 1);
 
-		write_log(context, event_name, 'REQUEST', data);
+		write_log(event_name, 'REQUEST', data);
 		switch (event_name) {
 			case 'register-device':
-				register_device(context, cb, data);
+				register_device(callback, data);
 				break;
 			case 'validate-cartridge':
-				validate_cartridge(context, cb, data);
+				validate_cartridge(callback, data);
 				break;
 			case 'test-start':
-				start_test(context, cb, data);
+				start_test(callbackcb, data);
 				break;
 			case 'test-finish':
-				finish_test(context, cb, data);
+				finish_test(callback, data);
 				break;
 			case 'test-cancel':
-				cancel_test(context, cb, data);
+				cancel_test(callback, data);
 				break;
 			case 'test-upload':
-				upload_test(context, cb, data);
+				upload_test(callback, data);
 				break;
 			case 'device-location':
-				locate_device(context, cb, data);
+				locate_device(callback, data);
 				break;
 			default:
-				send_response(context, cb, event_name, 'FAILURE', 'Event not found\n' + data);
+				send_response(callback, event_name, 'FAILURE', `Event not found: ${event_name}`);
 		}
 
 	};
