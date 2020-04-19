@@ -1,24 +1,24 @@
-const rp = require('request-promise-native');
-const Particle = require('particle-api-js');
+import rp from 'request-promise-native';
+import Particle from 'particle-api-js';
 const particle = new Particle();
 
 // test Comment
 
-function login(context) {
+const login = (context) => {
 	return particle.login({
 		username: context.secrets.PARTICLE_USERNAME,
 		password: context.secrets.PARTICLE_PASSWORD
 	});
 }
 
-function getDeviceInfo(deviceId, token) {
+const getDeviceInfo = (deviceId, token) => {
 	return particle.getDevice({
 		deviceId: deviceId,
 		auth: token
 	});
 }
 
-function getTestData(deviceId, token) {
+const getTestData = (deviceId, token) => {
 	return particle.getconstiable({
 		deviceId: deviceId,
 		name: 'register',
@@ -26,28 +26,28 @@ function getTestData(deviceId, token) {
 	});
 }
 
-function saveDocument(context, doc) {
+const dbURL = 'https://brevitestdatabase.com:6984/production/';
+const auth = {
+    username: 'brevitest-middleware',
+    password: 'brevitest-042-fannin'
+}
+
+const saveDocument = (doc) => {
 	const options = {
-		uri: 'http://brevitestdatabase.com:5984/master_brevitest/' + doc._id,
+		uri: dbURL + doc._id,
 		method: 'PUT',
-		auth: {
-			username: context.secrets.COUCHDB_USERNAME,
-			password: context.secrets.COUCHDB_PASSWORD
-		},
+		auth,
         json: true,
         body: doc
 	};
 	return rp(options);
 }
 
-function getDocument(context, docId) {
+const getDocument = (docId) => {
 	const options = {
-		uri: 'http://brevitestdatabase.com:5984/master_brevitest/' + docId,
+		uri: dbURL + docId,
 		method: 'GET',
-		auth: {
-			username: context.secrets.COUCHDB_USERNAME,
-			password: context.secrets.COUCHDB_PASSWORD
-		},
+		auth,
         json: true
 	};
 	return rp(options);
@@ -66,104 +66,38 @@ const bcodeCommands = [{
 }, {
 	num: '2',
 	name: 'Move',
-	params: ['steps', 'step_delay_us'],
-	description: 'Moves the stage a specified number of steps at a specified speed expressed as a step delay in microseconds.'
-}, {
-	num: '3',
-	name: 'Solenoid On',
-	params: ['energize_ms'],
-	description: 'Energizes the solenoid for a specified number of milliseconds.'
-}, {
-	num: '4',
-	name: 'Buzzer On',
-	params: ['duration_ms', 'frequency'],
-	description: 'Turns on the buzzer for a specified number of milliseconds at a specified frequency.'
-}, {
-	num: '5',
-	name: 'Move Microns',
 	params: ['microns', 'step_delay_us'],
 	description: 'Moves the stage a specified number of microns at a specified speed expressed as a step delay in microseconds.'
 }, {
-	num: '6',
-	name: 'Oscillate Stage',
+	num: '3',
+	name: 'Oscillate',
 	params: ['microns', 'step_delay_us', 'cycles'],
 	description: 'Oscillates back and forth a given distance at a specified speed expressed as a step delay in microseconds.'
 }, {
-	num: '7',
-	name: 'Read Sensor Baselines',
-	params: [],
-	description: 'Takes baseline readings from the sensors.'
+	num: '4',
+	name: 'Buzz',
+	params: ['duration_ms', 'frequency'],
+	description: 'Turns on the buzzer for a specified number of milliseconds at a specified frequency.'
 }, {
-	num: '8',
-	name: 'Read Sensor Baselines With Parameters',
-	params: ['param','led_power'],
-	description: 'Takes baseline readings from the sensors with input parameters.'
-}, {
-	num: '9',
+	num: '10',
 	name: 'Read Sensors',
 	params: [],
 	description: 'Takes readings from the sensors.'
 }, {
-	num: '10',
+	num: '11',
 	name: 'Read Sensors With Parameters',
 	params: ['param','led_power'],
 	description: 'Read sensors with input parameters.'
 }, {
-	num: '11',
-	name: 'Repeat Uninterrupted',
-	params: ['count'],
-	description: 'Repeats the block of BCODE without interruption.'
-}, {
-	num: '12',
+	num: '20',
 	name: 'Repeat',
 	params: ['count'],
 	description: 'Repeats the block of BCODE.'
 }, {
-	num: '14',
-	name: 'Set Heat Target',
-	params: ['tempC10X'],
-	description: 'Set the heating element target temperature to a specified level in Celsius (scaled 10X, so 51.4˚C is entered as 514).'
-}, {
-	num: '15',
-	name: 'Move To Start Position',
-	params: [],
-	description: 'Move stage to the starting position.'
-}, {
-	num: '16',
-	name: 'Move To Position',
-	params: ['position', 'step_delay_us'],
-	description: 'Move stage to a fixed position at a specified speed expressed as a step delay in microseconds.'
-}, {
-	num: '17',
-	name: 'Raster Well',
-	params: [
-		'total_steps',
-		'step_delay_us',
-		'number_of_rasters',
-		'number_of_firings',
-		'gather_time_ms',
-		'segments'
-	],
-	description: 'Rasters a well.'
-}, {
-	num: '18',
-	name: 'Well Transit',
-	params: [
-		'step_delay_us',
-		'gather_time_ms',
-		'segments'
-	],
-	description: 'Well to well transit.'
-}, {
-	num: '19',
-	name: 'Reserved19',
-	params: [],
-	description: 'Reserved for future use.'
-}, {
 	num: '98',
-	  name: 'Comment',
-	  params: ['text'],
-	  description: 'Comment - ignored by system.'
+    name: 'Comment',
+    params: ['text'],
+    description: 'Comment - ignored by system.'
   }, {
 	num: '99',
 	name: 'Finish Test',
@@ -171,211 +105,77 @@ const bcodeCommands = [{
 	description: 'Finishes the test. Required to be the final command.'
 }];
 
-const deviceParams;
-
-const integrationDelay = {
-	0xFF: 2.4,
-	/**<  2.4ms - 1 cycle    - Max Count: 1024  */
-	0xF6: 24,
-	/**<  24ms  - 10 cycles  - Max Count: 10240 */
-	0xEB: 50,
-	/**<  50ms  - 20 cycles  - Max Count: 20480 */
-	0xD5: 101,
-	/**<  101ms - 42 cycles  - Max Count: 43008 */
-	0xC0: 154,
-	/**<  154ms - 64 cycles  - Max Count: 65535 */
-	0x00: 700 /**<  700ms - 256 cycles - Max Count: 65535 */
-};
-
-function getBcodeCommand(cmd) {
+const getBcodeCommand = (cmd) => {
 	return bcodeCommands.find(function (e) {
 		return e.name === cmd;
 	});
 }
 
-function instructionTime(command, params) {
+const instructionTime = (command, params) => {
 	let d = 0;
-	let s = 0;
-	let i, j;
-	// jscs:disable requireCamelCaseOrUpperCaseIdentifiers
+
+    // jscs:disable requireCamelCaseOrUpperCaseIdentifiers
 	switch (command) {
-	case 'Delay': // delay
-		d = parseInt(params.delay_ms);
-		break;
-	case 'Solenoid On': // solenoid on
-		d = parseInt(params.energize_ms);
-		break;
-	case 'Move': // move
-		d = Math.floor(Math.abs(parseInt(params.steps)) * parseInt(params.step_delay_us) / 1000);
-		break;
-	case 'Buzzer On': // blink device LED
-		d = parseInt(params.duration_ms);
-		break;
-	case 'Move Microns': // move microns
-		d = Math.floor(Math.abs(parseInt(params.microns)) * parseInt(params.step_delay_us) / 25000);
-		break;
-	case 'Oscillate Stage': // oscillate
-		d = Math.floor(2 * parseInt(params.cycles) * Math.abs(parseInt(params.microns)) * parseInt(params.step_delay_us) / 25000);
-		break;
-	case 'Read Sensor Baselines': // read Sensors
-	case 'Read Sensor Baselines With Parameters':
-	case 'Read Sensors': // read Sensors
-	case 'Read Sensors With Parameters':
-		d = 6000;
-		break;
-	case 'Heat Pulse':
-		d = parseInt(params.duration);
-		break;
-	case 'Raster Well':
-  		d = parseInt(params.gather_time_ms + Math.abs(params.total_steps) * params.step_delay_us / 1000);
-  		s = 0;
-		for (i = 0; i < params.number_of_firings; i += 1) {
-			j = Math.min(i, params.segments.length - 1);
-			s += params.segments[j].energize_ms + params.segments[j].delay_ms;
-  		}
-  		d += s *  params.number_of_rasters;
-  		break;
-    case 'Well Transit':
-  		d = parseInt(params.gather_time_ms);
-  		d += params.segments.reduce(function(a, v) {
-  			return a + v.delay_ms + Math.abs(v.steps) * params.step_delay_us / 1000;
-  		}, 0);
-  		break;
-	case 'Start Test': // starting sensor reading plus LED warmup
-		d = 6000;
-		break;
-	case 'Finish Test': // starting sensor reading plus LED warmup
-		d = 6000;
-		break;
+        case 'Delay': // delay
+            return parseInt(params.delay_ms);
+        case 'Move': // move microns
+            return Math.floor(Math.abs(parseInt(params.microns)) * parseInt(params.step_delay_us) / 25000);
+        case 'Oscillate': // oscillate
+            return Math.floor(2 * parseInt(params.cycles) * Math.abs(parseInt(params.microns)) * parseInt(params.step_delay_us) / 25000);
+        case 'Buzz': // blink device LED
+            return parseInt(params.duration_ms);
+        case 'Read Sensors': // read Sensors
+        case 'Read Sensors With Parameters':
+            return 10000;
+        case 'Start Test': // starting sensor reading plus LED warmup
+            return 6000;
+        case 'Finish Test': // starting sensor reading plus LED warmup
+            return 6000;
 	}
 	// jscs:enable requireCamelCaseOrUpperCaseIdentifiers
 
-	return d;
+	return 0;
 }
 
-function bcodeEstimatedTime(bcodeArray) {
-	let b, i;
-	let duration = 0;
+const bcodeDuration = (bcodeArray) => {
+    const total_duration = bcodeArray.reduce((duration, bcode) => {
+            if (bcode.command === 'Repeat') {
+                return duration + bcodeDuration(bcode.code) * parseInt(bcode.count);
+            } else {
+                return duration + instructionTime(bcode.command, bcode.params);
+            }
+        }, 0);
 
-	for (i = 0; i < bcodeArray.length; i += 1) {
-		b = bcodeArray[i];
-		if (b) {
-			if (b.command === 'Repeat' || b.command === 'Repeat Uninterrupted') {
-				duration += bcodeEstimatedTime(b.code) * parseInt(b.count);
-			} else {
-				duration += instructionTime(b.command, b.params);
-			}
-		}
-	}
-
-	return duration;
+    return parseInt(total_duration);
 }
 
-function paramString(params, keys) {
-	return ',' + keys.map(function(key) {
-		return params[key];
-	}).join(',');
-}
-
-function compileInstruction(cmd, args) {
+const compileInstruction = (cmd, args) => {
 	const command = getBcodeCommand(cmd);
-	const argKeys = Object.keys(args).filter(function(k) {
-		return k !== 'comment';
-	});
+	const argKeys = Object.keys(args).filter(k => k !== 'comment');
 	if (command.params.length !== argKeys.length) {
 		throw new Error('Parameter count mismatch, command: ' + cmd + ' should have ' + command.params.length + ', has ' + argKeys.length);
 	}
-	return command.num + (argKeys.length ? paramString(args, argKeys) : '') + '\t';
+    return argKeys.reduce((result, key) => `${result},${args[key]}`, command.num);
 }
 
-function compileRepeatUninterruptedBegin(count) {
-	return '11,' + count + '\t';
+const compileRepeatBegin = (count) => {
+	return '20,' + count + '\t';
 }
 
-function compileRepeatBegin(count) {
-	return '12,' + count + '\t';
+const compileRepeatEnd() {
+	return '21\t';
 }
 
-function compileRepeatEnd() {
-	return '13\t';
-}
-
-function compileRasterWell(params) {
-	// jscs:disable requireCamelCaseOrUpperCaseIdentifiers
-  let s;
-  let code = compileInstruction('Raster Well', {
-	  'total_steps': params.total_steps,
-	  'step_delay_us': params.step_delay_us,
-	  'number_of_rasters': params.number_of_rasters,
-	  'number_of_firings': params.number_of_firings,
-	  'gather_time_ms': params.gather_time_ms,
-  	  'segments': params.segments.length,
-  });
-  code = code.slice(0, -1) + ',';
-
-  for (s = 0; s < params.segments.length; s += 1) {
-	  code += params.segments[s].energize_ms + ',';
-	  code += params.segments[s].delay_ms + ',';
-  }
-  return code.slice(0, -1) + '\t';
-  // jscs:enable requireCamelCaseOrUpperCaseIdentifiers
-}
-
-function compileWellTransit(params) {
-	// jscs:disable requireCamelCaseOrUpperCaseIdentifiers
-  let s;
-  let code = compileInstruction('Well Transit', {
-	  'step_delay_us': params.step_delay_us,
-	  'gather_time_ms': params.gather_time_ms,
-	  'segments': params.segments.length,
-  });
-  code = code.slice(0, -1) + ',';
-
-  for (s = 0; s < params.segments.length; s += 1) {
-	  code += params.segments[s].count + ',';
-	  code += params.segments[s].steps + ',';
-	  code += params.segments[s].delay_ms + ',';
-  }
-  return code.slice(0, -1) + '\t';
-  // jscs:enable requireCamelCaseOrUpperCaseIdentifiers
-}
-
-function bcodeCompileArray(bcodeArray) {
-	let b, i;
-	let compiledCode = '';
-
-	for (i = 0; i < bcodeArray.length; i += 1) {
-		b = bcodeArray[i];
-		if (b) {
-			if (b.command !== 'Comment') {
-				if (b.command === 'Repeat') {
-					compiledCode += compileRepeatBegin(b.count) + bcodeCompileArray(b.code) + compileRepeatEnd();
-				} else if (b.command === 'Raster Well') {
-					compiledCode += compileRasterWell(b.params);
-				} else if (b.command === 'Well Transit') {
-					compiledCode += compileWellTransit(b.params);
-				} else {
-					if (b.command === 'Repeat Uninterrupted') {
-						compiledCode += compileRepeatUninterruptedBegin(b.count) + bcodeCompileArray(b.code) + compileRepeatEnd();
-					} else {
-						compiledCode += compileInstruction(b.command, b.params);
-					}
-				}
-			}
-		}
-	}
-
-	return compiledCode;
-}
-
-function bcodeDuration(bcode) {
-	deviceParams = bcode.deviceParams;
-	return parseInt(bcodeEstimatedTime(bcode.code) / 1000);
-}
-
-function bcodeCompile(bcode) {
-	deviceParams = bcode.deviceParams;
-	return bcodeCompileArray(bcode.code);
+const bcodeCompile = (bcodeArray) => {
+    return bcodeArray.reduce((compiledCode, bcode) => {
+        if (bcode.command === 'Comment') {
+            return compiledCode;
+        } else if (bcode.command === 'Repeat') {
+            return compiledCode + compileRepeatBegin(bcode.count) + bcodeCompile(bcode.code) + compileRepeatEnd();
+        } else {
+            return compiledCode + compileInstruction(bcode.command, bcode.params);
+        }
+    })
 }
 
 const crc32tab = [
@@ -445,7 +245,7 @@ const crc32tab = [
 	0xb40bbe37, 0xc30c8ea1, 0x5a05df1b, 0x2d02ef8d
 ];
 
-function checksum(str) {
+const checksum = (str) => {
     let crc = ~0, i, l;
     for (i = 0, l = str.length; i < l; i++) {
         crc = (crc >>> 8) ^ crc32tab[(crc ^ str.charCodeAt(i)) & 0xff];
@@ -454,56 +254,45 @@ function checksum(str) {
     return crc;
 }
 
-function generateTestString(cartridgeId, assay, testId) {
-	let code = cartridgeId + '\n';
-	let bcode, codeStr;
+const generateTestString = (cartridgeId, assay, testId) => {
+    const bcode = assay.BCODE;
+    const compiledBCODE =  bcodeCompile(bcode);
+    const result = [
+        cartridgeId,
+        testId,
+        checksum(compiledBCODE),
+        compiledBCODE.length,
+        compiledBCODE,
+        '-|'
+    ]
 
-	code += testId + '\t';
-
-	bcode = assay.BCODE;
-	code += assay.duration + '\t';
-	code += bcode.deviceParams.integrationTime + '\t';
-	code += bcode.deviceParams.gain + '\t';
-	code += bcode.deviceParams.ledPower + '\t';
-	code += bcode.deviceParams.delayBetweenSensorReadings + '\t';
-
-	codeStr = bcodeCompile(bcode);
-	code += (codeStr.length + 1).toString() + '\t';
-	code += '1\t'; // BCODE version
-	code += checksum(codeStr.slice(0, -1)) + '\t'; // BCODE checksum
-	code += codeStr;
-
-	code += '\n';
-
-	return code;
+    return result.join('|');
+}
+const randHexDigits = (len) => {
+    return [...Array(Math.round(len)).keys()].reduce((hex) => {
+        hex + parseInt(Math.floor(Math.random() * 16)).toString(16).toUpperCase()
+    }, '')
 }
 
-function randHexDigits(len) {
-    let i, result = '';
-    for (i = 0; i < len; i += 1) {
-        result += parseInt(Math.random() * 16).toString(16).toUpperCase();
-    }
-    return result;
-}
-
-function createTest(context, cartridge, assay) {
-	console.log('Creating new test', cartridge, assay);
-	const id = 'brevitst' + Date.now().toString() + randHexDigits(3);
+const createTest = (device, cartridge, assay) => {
+    console.log('Creating new test', device, cartridge, assay);
+    
+	const _id = `${device.customer_id}-${Date.now().toString()}-${randHexDigits(3)}`;
     const test = {
-        _id: id,
+        _id,
         schema: 'test',
-        cartridge: cartridge,
-        assay: assay,
-				refNumber: 'Test auto-created by webtask',
+        cartridge,
+        assay,
+        refNumber: 'Test auto-created by middleware',
         status: 'In queue',
-				queuedOn: new Date()
+        queuedOn: new Date()
     };
 
-	return saveDocument(context, test)
+	return saveDocument(test)
 		.then(function(response) {
 			test._rev = response.rev;
-			cartridge.testId = id;
-			return saveDocument(context, cartridge);
+			cartridge.testId = test._id;
+			return saveDocument(cartridge);
 		})
 		.then(function(response) {
 			cartridge._rev = response.rev;
@@ -511,93 +300,96 @@ function createTest(context, cartridge, assay) {
 		});
 }
 
-function validate_cartridge(context, cb, cartridgeId) {
-	let testId = null;
-	let cartridge = null;
-	let assay = null;
-	
+const validate_cartridge = (callback, deviceId, cartridgeId) => {
+	console.log('validate_cartridge', deviceId, cartridgeId);
 
-	console.log('webtask_brevitest_validate');
+	if (!cartridgeId) {
+        send_response(callback, 'validate-cartridge', `FAILURE: Cartridge ID missing`);
+        return;
+    }
+	if (!deviceId) {
+        send_response(callback, 'validate-cartridge', `FAILURE: Device ID missing`);
+        return;
+    }
+    const assayId = cartridgeId.slice(0, 8);
 
-	if (cartridgeId) {
-		console.log(cartridgeId);
-		getDocument(context, cartridgeId)
-			.then(function (c) {
-				cartridge = c;
-				console.log(cartridge);
-				if (!cartridge) {
-					throw new Error('FAILURE\n' + cartridgeId + '\nCartridge not found');
-				}
-				if (!cartridge._id) {
-					throw new Error('FAILURE\n' + cartridgeId + '\nMissing cartridge ID');
-				}
-				if (cartridge._id !== cartridgeId) {
-					throw new Error('FAILURE\n' + cartridgeId + '\nCartridge ID mismatch');
-				}
-				if (cartridge.used) {
-					throw new Error('FAILURE\n' + cartridgeId + '\nCartridge already used');
-				}
+    getDocument(deviceId)
+        .then(function (device) {
+            if (!device) {
+                throw new Error(`FAILURE: Device ${deviceId} not found`);
+            }
+            if (device._id !== deviceId) {
+                throw new Error(`FAILURE: Device ${deviceId} mismatch`);
+            }
+            if (!device.customer_id) {
+                throw new Error(`FAILURE: Customer ID for device ${deviceId} is missing`);
+            }
 
-				return getDocument(context, cartridgeId.slice(0, 8));
-			})
-			.then(function (a) {
-				assay = a;
-				if (!assay) {
-					throw new Error('FAILURE\n' + cartridgeId + '\nAssay not found');
-				}
-				if (!assay._id) {
-					throw new Error('FAILURE\n' + cartridgeId + '\nMissing assay ID');
-				}
-				if (assay._id !== cartridgeId.slice(0, 8)) {
-					throw new Error('FAILURE\n' + cartridgeId + '\nAssay ID mismatch');
-				}
-				if (cartridge.testId) {
-					console.log('cartridge.testId', cartridge.testId);
-					return getDocument(context, cartridge.testId);
-				}
-				else {
-					console.log('creating new test');
-					return createTest(context, cartridge, assay);
-				}
-			})
-			.then(function (test) {
-				if (!test) {
-					throw new Error('FAILURE\n' + cartridgeId + '\nTest record not found');
-				}
-				if (!test._id) {
-					throw new Error('FAILURE\n' + cartridgeId + '\nMissing test ID');
-				}
-				if (test._id !== cartridge.testId) {
-					throw new Error('FAILURE\n' + cartridgeId + '\nTest ID mismatch');
-				}
-				if (test.status !== 'In queue') {
-					throw new Error('FAILURE\n' + cartridgeId + '\nCartridge has not been queued');
-				}
-				const responseString = generateTestString(cartridgeId, assay, test._id);
-				console.log('validate-cartridge', 'SUCCESS', responseString);
-				send_response(context, cb, 'validate-cartridge', 'SUCCESS', responseString);
-			})
-			.catch(function (error) {
-				console.log(error);
-				if (error.message && error.message.slice(0,7) === 'FAILURE') {
-					send_response(context, cb, 'validate-cartridge', 'FAILURE', error.message.slice(8));
-				}
-				else {
-					if (error.statusCode && error.statusCode === 404) {
-						send_response(context, cb, 'validate-cartridge', 'FAILURE', cartridgeId + '\n' + error.message.slice(8));
-					}
-					else {
-						error.cartridgeId = cartridgeId;
-						send_response(context, cb, 'validate-cartridge', 'ERROR', error);
-					}
-				}
-			});
-	} else {
-		send_response(context, cb, 'validate-cartridge', 'FAILURE', cartridgeId + '\nCartridge ID not found');
+            return { device, cartridge: getDocument(cartridgeId) };
+        })
+        .then(function ({ device, cartridge }) {
+            if (!cartridge) {
+                throw new Error(`FAILURE: Cartridge ${cartridgeId} not found`);
+            }
+            if (cartridge._id !== cartridgeId) {
+                throw new Error(`FAILURE: Cartridge ${cartridgeId} mismatch`);
+            }
+            if (cartridge.used) {
+                throw new Error(`FAILURE: Cartridge ${cartridgeId} already used`);
+            }
+
+            return { device, cartridge, assay: getDocument(assayId) };
+        })
+        .then(function ({ device, cartridge, assay }) {
+            if (!assay) {
+                throw new Error(`FAILURE: Assay ${assayId} not found`);
+            }
+            if (assay._id !== assayId) {
+                throw new Error(`FAILURE: Assay ${cartridgeId} mismatch`);
+            }
+            // VERIFY FOR VARIOUS USE CASES (PRESCANNED AND POSTSCANNED)
+            if (cartridge.testId) {
+                console.log('cartridge.testId', cartridge.testId);
+                return getDocument(context, cartridge.testId);
+            }
+            else {
+                console.log('creating new test');
+                return { assay, test: createTest(device, cartridge, assay) };
+            }
+        })
+        .then(function ({ assay, test }) {
+            if (!test) {
+                throw new Error(`FAILURE: Test for cartridge ${cartridgeId} not found`);
+            }
+            if (test._id !== cartridge.testId) {
+                throw new Error(`FAILURE: Test mismatch for cartridge ${cartridgeId}`);
+            }
+            if (test.status !== 'In queue') {
+                throw new Error(`FAILURE: Cartridge ${cartridgeId} has not been queued`);
+            }
+            const responseString = generateTestString(cartridgeId, assay, test._id);
+            console.log('validate-cartridge', 'SUCCESS', responseString);
+            send_response(callback, 'validate-cartridge', 'SUCCESS', responseString);
+        })
+        .catch(function (error) {
+            console.log(error);
+            if (error.message && error.message.slice(0,7) === 'FAILURE') {
+                send_response(callback, 'validate-cartridge', 'FAILURE', error.message.slice(8));
+            }
+            else {
+                if (error.statusCode && error.statusCode === 404) {
+                    send_response(callback, 'validate-cartridge', 'FAILURE', cartridgeId + '\n' + error.message.slice(8));
+                }
+                else {
+                    error.cartridgeId = cartridgeId;
+                    send_response(callback, 'validate-cartridge', 'ERROR', error);
+                }
+            }
+        });
 	}
 }
 
-function start_test(context, cb, testId) {
+const start_test = (context, cb, testId) => {
 	let cartridgeId, device;
 
 	console.log('webtask_brevitest, test-start');
