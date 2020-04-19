@@ -269,16 +269,21 @@ const generateTestString = (cartridgeId, assay, testId) => {
     return result.join('|');
 }
 const randHexDigits = (len) => {
-    return [...Array(Math.round(len)).keys()].reduce((hex) => {
-        hex + parseInt(Math.floor(Math.random() * 16), 16).toString().toUpperCase()
+    return [...Array(Math.round(len)).keys()].reduce((a) => {
+        return (
+            a +
+            parseInt(Math.floor(Math.random() * 16), 10)
+                .toString(16)
+                .toUpperCase()
+        )
     }, '')
 }
 
-const createTest = (device, cartridge, assay) => {
-    console.log('Creating new test', device, cartridge, assay);
+const createTest = (cartridge, assay) => {
+    console.log('Creating new test', cartridge, assay);
     
-    // Test primary key: customer_id from Particle ()
-	const _id = `${device.customer_id}-${parseInt(Date.now(), 16).toString()}-${randHexDigits(3)}`;
+    // primary key: 8 hex customerId, 11 char hex datetime, 3 random hex => 24 hex characters
+	const _id = `${cartridge.customerId}-${parseInt(Date.now(), 16).toString()}-${randHexDigits(3)}`; // length8 char customerId
     const test = {
         _id,
         schema: 'test',
@@ -315,41 +320,33 @@ const validate_cartridge = (callback, deviceId, cartridgeId) => {
             .then((device) => {
                 if (!device) {
                     throw new Error(`FAILURE: Device ${deviceId} not found`);
-                } else if (device._id !== deviceId) {
-                    throw new Error(`FAILURE: Device ${deviceId} mismatch`);
                 } else if (!device.customerId) {
                     throw new Error(`FAILURE: Customer ID for device ${deviceId} is missing`);
                 }
     
-                return { device, customer: getDocument(customerId) };
+                return getDocument(device.customerId);
             })
-            .then(({ device, customer }) => {
+            .then((customer) => {
                 if (!customer) {
-                    throw new Error(`FAILURE: Customer ${customerId} not found`);
-                } else if (customer._id !== customerId) {
-                    throw new Error(`FAILURE: Customer ${customerId} mismatch`);
+                    throw new Error(`FAILURE: Customer for device ${deviceId} not found`);
                 }
     
-                return { device, customer, cartridge: getDocument(cartridgeId) };
+                return { customer, cartridge: getDocument(cartridgeId) };
             })
-            .then(({ device, customer, cartridge }) => {
+            .then(({ customer, cartridge }) => {
                 if (!cartridge) {
                     throw new Error(`FAILURE: Cartridge ${cartridgeId} not found`);
-                } else if (cartridge._id !== cartridgeId) {
-                    throw new Error(`FAILURE: Cartridge ${cartridgeId} mismatch`);
                 } else if (cartridge.used) {
                     throw new Error(`FAILURE: Cartridge ${cartridgeId} already used`);
                 } else if (cartridge.customerId !== customer._id) {
                     throw new Error(`FAILURE: Cartridge ${cartridgeId} does not belong to this customer`);
                 }
     
-                return { device, cartridge, assay: getDocument(assayId) };
+                return { cartridge, assay: getDocument(assayId) };
             })
-            .then(({ device, cartridge, assay }) => {
+            .then(({ cartridge, assay }) => {
                 if (!assay) {
                     throw new Error(`FAILURE: Assay ${assayId} not found`);
-                } else if (assay._id !== assayId) {
-                    throw new Error(`FAILURE: Assay ${cartridgeId} mismatch`);
                 }
                 // VERIFY FOR VARIOUS USE CASES (PRESCANNED AND POSTSCANNED)
                 if (cartridge.testId) {
@@ -357,7 +354,7 @@ const validate_cartridge = (callback, deviceId, cartridgeId) => {
                     return getDocument(context, cartridge.testId);
                 } else {
                     console.log('creating new test');
-                    return { assay, test: createTest(device, cartridge, assay) };
+                    return { assay, test: createTest(cartridge, assay) };
                 }
             })
             .then(({ assay, test }) => {
