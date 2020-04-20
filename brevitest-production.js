@@ -749,9 +749,6 @@ module.exports =
 			case 'test-upload':
 				upload_test(callback, data);
 				break;
-			case 'device-location':
-				locate_device(callback, data);
-				break;
 			default:
 				send_response(callback, event_name, 'FAILURE', `Event not found: ${event_name}`);
 		}
