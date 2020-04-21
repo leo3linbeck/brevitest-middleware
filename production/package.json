@@ -13,8 +13,8 @@
   "author": "Leo Linbeck III",
   "license": "MIT",
   "dependencies": {
-    "particle-api-js": "^8.3.0",
-    "request-promise-native": "^1.0.8"
+    "nano": "^8.2.2",
+    "particle-api-js": "^8.3.0"
   },
   "devDependencies": {},
   "repository": {
