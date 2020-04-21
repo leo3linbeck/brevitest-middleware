@@ -2,7 +2,8 @@ import rp from 'request-promise-native';
 import Particle from 'particle-api-js';
 const particle = new Particle();
 
-// test Comment
+const COMMAND_DELIM = '|';
+const ITEM_DELIM = "#"
 
 const login = () => {
 	return particle.login({
@@ -26,10 +27,10 @@ const getTestData = (deviceId, token) => {
 	});
 }
 
-const dbURL = 'https://brevitestdatabase.com:6984/production/';
+const dbURL = 'https://brevitestdatabase.com:5984/production/';
 const auth = {
-    username: 'brevitest-middleware',
-    password: 'brevitest-042-fannin'
+    username: 'leo3',
+    password: '2jan88'
 }
 
 const saveDocument = (doc) => {
@@ -155,15 +156,15 @@ const compileInstruction = (cmd, args) => {
 	if (command.params.length !== argKeys.length) {
 		throw new Error('Parameter count mismatch, command: ' + cmd + ' should have ' + command.params.length + ', has ' + argKeys.length);
 	}
-    return argKeys.reduce((result, key) => `${result},${args[key]}`, command.num);
+    return argKeys.reduce((result, key) => `${result},${args[key]}`, command.num) + COMMAND_DELIM;
 }
 
 const compileRepeatBegin = (count) => {
-	return '20,' + count + '\t';
+	return '20,' + count + COMMAND_DELIM;
 }
 
 const compileRepeatEnd() {
-	return '21\t';
+	return '21' + COMMAND_DELIM;
 }
 
 const bcodeCompile = (bcodeArray) => {
@@ -262,13 +263,13 @@ const generateTestString = (cartridgeId, assay, testId) => {
         testId,
         checksum(compiledBCODE),
         compiledBCODE.length,
-        compiledBCODE,
-        '-|'
+        compiledBCODE
     ]
 
-    return result.join('|');
+    return result.join(ITEM_DELIM);
 }
-const randHexDigits = (len) => {
+
+randHexDigit = (len) => {
     return [...Array(Math.round(len)).keys()].reduce((a) => {
         return (
             a +
@@ -276,14 +277,14 @@ const randHexDigits = (len) => {
                 .toString(16)
                 .toUpperCase()
         )
-    }, '')
+	}, '')
 }
 
 const createTest = (cartridge, assay) => {
     console.log('Creating new test', cartridge, assay);
     
     // primary key: 8 hex customerId, 11 char hex datetime, 3 random hex => 24 hex characters
-	const _id = `${cartridge.customerId}-${parseInt(Date.now(), 16).toString()}-${randHexDigits(3)}`; // length8 char customerId
+	const _id = `${cartridge.customerId}-${parseInt(Date.now()).toString(16)}-${randHexDigits(3)}`; // length8 char customerId
     const test = {
         _id,
         schema: 'test',
@@ -304,6 +305,19 @@ const createTest = (cartridge, assay) => {
 			cartridge._rev = response.rev;
 			return test;
 		});
+}
+
+const pair_cartridge = (callback, deviceId, data) => {
+	console.log('pair_cartridge', deviceId, data);
+	const args = data.split('|');
+	const cartridgeId = args[0];
+	const orderId = args[1];
+
+	if (!cartridgeId) {
+        send_response(callback, 'pair-cartridge', `FAILURE: Cartridge ID missing`);
+    } else if (!deviceId) {
+        send_response(callback, 'pair-cartridge', `FAILURE: Device ID missing`);
+    } else {
 }
 
 const validate_cartridge = (callback, deviceId, cartridgeId) => {
@@ -384,7 +398,7 @@ const validate_cartridge = (callback, deviceId, cartridgeId) => {
     }
 }
 
-const start_test = (callback, deviceId, testId) => {
+const test_start = (callback, deviceId, testId) => {
     console.log('start_test', deviceId, testId);
 
 	if (!deviceId) {
@@ -446,7 +460,7 @@ const start_test = (callback, deviceId, testId) => {
 		});    }
 }
 
-const finish_test = (callback, testId) => {
+const test_finish = (callback, deviceId, testId) => {
 	console.log('test-finish', testId);
 
 	if (!testId) {
@@ -487,7 +501,7 @@ const finish_test = (callback, testId) => {
 	}
 }
 
-const cancel_test = (callback, testId) => {
+const test_cancel = (callback, deviceId, testId) => {
 	console.log('test-cancel', testId);
 
 	if (!testId) {
@@ -557,8 +571,8 @@ const parseData = (str, testId) => {
 	const lines;
 	const result = {};
 
-	lines = str.split('\n');
-    attr = lines[0].split('\t');
+	lines = str.split(LINE_DELIM);
+    attr = lines[0].split(ATTR_DELIM);
     result.startedOn = Date(parseInt(attr[0]));
     result.finishedOn = Date(parseInt(attr[1]));
 	result.testId = attr[2];
@@ -591,7 +605,7 @@ const calculateResults = (data) => {
 	return Math.round(100000 * (xyzDiff(data[1], data[3]) - xyzDiff(data[0], data[2])), 0);
 };
 
-const upload_test = (callback, deviceId, testId) => {
+const test_upload = (callback, deviceId, testId) => {
 	console.log('upload-test', deviceId, testId);
 
 	if (!deviceId) {
@@ -652,30 +666,27 @@ const upload_test = (callback, deviceId, testId) => {
 	}
 }
 
-const create_device = (deviceId, data) => {
+const create_device = (deviceId) => {
 	const device = {};
 
-	console.log('create_device', deviceId, data);
+	console.log('create_device', deviceId);
 	device._id = deviceId;
 	device.name = data.name;
 	device.registeredOn = new Date();
-    device.particle = data;
+	device.lastRegisteredOn = device.registeredOn;
     device.customerId = null;
 
 	return device;
 }
 
-const register_device = (callback, deviceId) => {
-	login()
-		.then((response) => {
-			token = response.body.access_token;
-			return getDeviceInfo(deviceId, token);
+const register_device = (callback, deviceId, data) => {
+	getDocument(deviceId)
+		.then((device) =>{
+			return  device || create_device(deviceId);
 		})
-		.then((response) => {
-			if (!response || !response.body || !response.body.result) {
-				throw new Error(`FAILURE: Unable to get information for device ${deviceId}`);
-            }
-            const device = create_device(deviceId, response.body.result);
+		.then ((device) => {
+			device.lastRegisteredOn = new Date();
+			device.particle = data;
 			return saveDocument(device);
 		})
 		.then((response) => {
@@ -687,70 +698,81 @@ const register_device = (callback, deviceId) => {
 		})
 		.catch((error) => {
 			if (error.message && error.message.slice(0,7) === 'FAILURE') {
-				send_response(context, cb, 'register-device', 'FAILURE', error.message.slice(8));
+				send_response(callback, 'register-device', 'FAILURE', error.message.slice(8));
 			} else {
 				error.deviceId = deviceId;
-				send_response(context, cb, 'register-device', 'ERROR', error);
+				send_response(callback, 'register-device', 'ERROR', error);
 			}
 		});
 }
+
 const write_log = (event_name, event_type, data) => {
-	console.log('write_log', event_name, event_type, data);
+	console.log('write_log', event_name, event_type, status, data);
 	const loggedOn = new Date();
-	const _id = 'log_' + d.toISOString();
+	const _id = 'log_' + loggedOn.toISOString();
     const log_entry = {
         _id,
         schema: 'log',
 		loggedOn,
 		event: event_name,
 		type: event_type,
+		status,
         data
     };
 
 	return saveDocument(log_entry);
 }
 
-function send_response(callback, event_name, event_type, data) {
-	const response = event_name + ':' + event_type + ':' + (typeof(data) === 'object' ? JSON.stringify(data) : data);
+const send_response = (callback, event_name, event_type, status, data) => {
+    const response = {
+		statusCode: 200,
+    	"isBase64Encoded": false
+    };
 
-	write_log(event_name, event_type, data);
+	// write_log(event_name, event_type, status, data);
 
-	console.log('response', response);
-	if (event_type === 'ERROR') {
-		callback(response);
-	} else {
-		callback(null, response);
-	}
+	response.body =	event_name + ':' + event_type + ':' + status + ':' + (typeof(data) === 'object' ? JSON.stringify(data) : data);
+
+	callback(null, response);
 }
 
-module.exports =
-	function (event, context, callback) {
-		const indx = context.body.data.indexOf('\n');
-		const event_name = context.body.data.slice(0, indx);
-		const data = context.body.data.slice(indx + 1);
-
-		write_log(event_name, 'REQUEST', data);
-		switch (event_name) {
-			case 'register-device':
-				register_device(callback, data);
-				break;
-			case 'validate-cartridge':
-				validate_cartridge(callback, data);
-				break;
-			case 'test-start':
-				start_test(callbackcb, data);
-				break;
-			case 'test-finish':
-				finish_test(callback, data);
-				break;
-			case 'test-cancel':
-				cancel_test(callback, data);
-				break;
-			case 'test-upload':
-				upload_test(callback, data);
-				break;
-			default:
-				send_response(callback, event_name, 'FAILURE', `Event not found: ${event_name}`);
+exports.handler = (event, context, callback) => {
+	if (event) {
+		// send_response(callback, 'brevitest-production', 'event_type', 'SUCCESS', event.queryStringParameters);
+		if (event.queryStringParameters) {
+			const body = event.queryStringParameters;
+			const deviceId = body.coreid;
+			const payload = body.data;
+			const indx = payload.indexOf(':');
+			const event_name = (indx === -1) ? payload : payload.slice(0, indx);
+			const data = (indx === -1) ? '' : payload.slice(indx + 1);
+			switch (event_name) {
+				case 'register-device':
+					register_device(callback, deviceId, body);
+					break;
+				case 'pair-cartridge':
+					pair_cartridge(callback, deviceId, data);
+					break;
+				case 'validate-cartridge':
+					validate_cartridge(callback, deviceId, data);
+					break;
+				case 'test-start':
+					test_start(callback, deviceId, data);
+					break;
+				case 'test-finish':
+					test_finish(callback, deviceId, data);
+					break;
+				case 'test-cancel':
+					test_cancel(callback, deviceId, data);
+					break;
+				case 'test-upload':
+					test_upload(callback, deviceId, data);
+					break;
+				default:
+					send_response(callback, 'brevitest-production', event_name, 'FAILURE', `Event not found:${event_name}`);
+			}
 		}
-
-	};
+	} else {
+		send_response(callback, 'unknown', 'unknown', 'ERROR', 'Brevitest event malformed');
+	}
+};
