@@ -291,7 +291,7 @@ const createTest = (cartridge, assay) => {
         cartridge,
         assay,
         refNumber: 'Test auto-created by middleware',
-        status: 'In queue',
+        status: 'queued',
         queuedOn: new Date()
     };
 
