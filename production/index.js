@@ -1,4 +1,4 @@
-const db = require('nano')('http://brevitestdatabase.com:5984/master_brevitest');
+const db = require('nano')('http://brevitestdatabase.com:5984/development');
 const Particle = require('particle-api-js');
 
 const particle = new Particle();
@@ -39,6 +39,10 @@ const getDocument = (docId) => {
     return db.get(docId);
 }
 
+const fetchDocuments = (keys) => {
+    return db.fetch({ keys });
+}
+
 const bcodeCommands = [{
 	num: '0',
 	name: 'Start Test',
@@ -51,12 +55,12 @@ const bcodeCommands = [{
 	description: 'Waits for specified number of milliseconds.'
 }, {
 	num: '2',
-	name: 'Move',
+	name: 'Move Microns',
 	params: ['microns', 'step_delay_us'],
 	description: 'Moves the stage a specified number of microns at a specified speed expressed as a step delay in microseconds.'
 }, {
 	num: '3',
-	name: 'Oscillate',
+	name: 'Oscillate Stage',
 	params: ['microns', 'step_delay_us', 'cycles'],
 	description: 'Oscillates back and forth a given distance at a specified speed expressed as a step delay in microseconds.'
 }, {
@@ -92,23 +96,19 @@ const bcodeCommands = [{
 }];
 
 const getBcodeCommand = (cmd) => {
-	return bcodeCommands.find(function (e) {
-		return e.name === cmd;
-	});
+	return bcodeCommands.find(e => e.name === cmd);
 }
 
 const instructionTime = (command, params) => {
-	let d = 0;
-
     // jscs:disable requireCamelCaseOrUpperCaseIdentifiers
 	switch (command) {
         case 'Delay': // delay
             return parseInt(params.delay_ms);
-        case 'Move': // move microns
+        case 'Move Microns': // move microns
             return Math.floor(Math.abs(parseInt(params.microns)) * parseInt(params.step_delay_us) / 25000);
-        case 'Oscillate': // oscillate
+        case 'Oscillate Stage': // oscillate
             return Math.floor(2 * parseInt(params.cycles) * Math.abs(parseInt(params.microns)) * parseInt(params.step_delay_us) / 25000);
-        case 'Buzz': // blink device LED
+        case 'Buzz': // buzz the buzzer
             return parseInt(params.duration_ms);
         case 'Read Sensors': // read Sensors
         case 'Read Sensors With Parameters':
@@ -119,7 +119,6 @@ const instructionTime = (command, params) => {
             return 6000;
 	}
 	// jscs:enable requireCamelCaseOrUpperCaseIdentifiers
-
 	return 0;
 }
 
@@ -136,23 +135,29 @@ const bcodeDuration = (bcodeArray) => {
 }
 
 const compileInstruction = (cmd, args) => {
-	const command = getBcodeCommand(cmd);
-	const argKeys = Object.keys(args).filter(k => k !== 'comment');
+    const command = getBcodeCommand(cmd);
+    const keys = Object.keys(args);
+	const argKeys = keys.length ? keys.filter(k => k !== 'comment') : [];  // remove comments
 	if (command.params.length !== argKeys.length) {
-		throw new Error('Parameter count mismatch, command: ' + cmd + ' should have ' + command.params.length + ', has ' + argKeys.length);
-	}
-    return argKeys.reduce((result, key) => `${result}${ARG_DELIM}${args[key]}`, command.num) + ATTR_DELIM;
+		throw new Error(`Parameter count mismatch, command: ${cmd} should have ${command.params.length}, has ${argKeys.length}`);
+    }
+    if (command.params.length) {
+        return command.params.reduce((result, param) => `${result}${ARG_DELIM}${args[param]}`, command.num) + ATTR_DELIM;
+    } else {
+        return command.num + ATTR_DELIM;
+    }
 }
 
 const compileRepeatBegin = (count) => {
-	return '20,' + count + ATTR_DELIM;
+	return `20,${count}${ATTR_DELIM}`;
 }
 
 const compileRepeatEnd = () => {
-	return '21' + ATTR_DELIM;
+	return `21${ATTR_DELIM}`;
 }
 
 const bcodeCompile = (bcodeArray) => {
+    console.log('bcodeArray', bcodeArray);
     return bcodeArray.reduce((compiledCode, bcode) => {
         if (bcode.command === 'Comment') {
             return compiledCode;
@@ -161,7 +166,7 @@ const bcodeCompile = (bcodeArray) => {
         } else {
             return compiledCode + compileInstruction(bcode.command, bcode.params);
         }
-    })
+    }, '');
 }
 
 const crc32tab = [
@@ -243,11 +248,12 @@ const checksum = (str) => {
 const generateResponseString = (cartridgeId, code) => {
     const bcodeVersion = 2
     const compiledBCODE =  bcodeCompile(code);
+    const duration = parseInt(bcodeDuration(code) / 1000);
     const result = [
         cartridgeId,
         bcodeVersion,
         checksum(compiledBCODE),
-        bcodeDuration(bcode),
+        duration,
         compiledBCODE.length,
         compiledBCODE
     ]
@@ -263,21 +269,19 @@ const validate_cartridge = (callback, deviceId, cartridgeId) => {
     } else if (!deviceId) {
         send_response(callback, 'validate-cartridge', 'FAILURE', `Device ID missing`);
     } else {
-        let bcode = '';
-        let responseString = cartridgeId;
+        let code = null;
         const assayId = cartridgeId.slice(0, 8);
-        getDocument(assayId)
-            .then((assay) => {
-                if (!assay) {
-                    throw new Error(`FAILURE: Assay ${assayId} not found`);
+        fetchDocuments([deviceId, assayId, cartridgeId])
+            .then((response) => {
+                if (!(response && response.rows && (response.rows.length === 3))) {
+                    throw new Error(`Could not find device ${deviceId}, assay ${assayId}, or cartridge ${cartridgeId}`);
                 }
-                bcode = assay.BCODE.code
-                return getDocument(cartridgeId)
-            })
-            .then((cartridge) => {
-                if (!cartridge) {
-                    throw new Error(`Cartridge ${cartridgeId} not found`);
-                } else if (cartridge.used) {
+
+                const device = response.rows[0].doc;
+                const assay = response.rows[1].doc;
+                const cartridge = response.rows[2].doc;
+                console.log('fetch', device, assay, cartridge)
+                if (cartridge.used) {
                     throw new Error(`Cartridge ${cartridgeId} already used`);
                 } else if (cartridge.status !== 'linked') {
                     throw new Error(`Cartridge ${cartridgeId} is not linked to a sample`);
@@ -285,8 +289,12 @@ const validate_cartridge = (callback, deviceId, cartridgeId) => {
                     throw new Error(`Cartridge ${cartridgeId} is missing a reference for its sample`);
                 } else if (!cartridge.customerId) {
                     throw new Error(`Cartridge ${cartridgeId} is not assigned to a customer`);
+                } else if (cartridge.customerId !== device.customerId) {
+                    throw new Error(`Cartridge customer ${cartridge.customerId} does not match device customer ${device.customerId}`);
                 }
-                
+                code = assay.BCODE.code
+                cartridge.device = device;
+                cartridge.assay = assay;
                 cartridge.status = 'underway';
                 cartridge.used = true;
                 return saveDocument(cartridge);
@@ -295,8 +303,7 @@ const validate_cartridge = (callback, deviceId, cartridgeId) => {
                 if (!(response && response.ok)) {
                     throw new Error(`Cartridge ${cartridgeId} could not be saved in the database`);
                 }
-                const responseString = generateResponseString(cartridgeId, bcode);
-                console.log('validate-cartridge', 'SUCCESS', responseString);
+                const responseString = generateResponseString(cartridgeId, code);
                 send_response(callback, 'validate-cartridge', 'SUCCESS', responseString);
             })
             .catch((error) => {
@@ -623,7 +630,7 @@ exports.handler = (event, context, callback) => {
 	if (event) {
 		if (event.queryStringParameters) {
             const body = parseEvent(event);
-            console.log('body', event.queryStringParameters, body);
+            // console.log('body', event.queryStringParameters, body);
             if (body.event_name !== 'brevitest-production') {
                 send_response(callback, 'unknown', 'ERROR', 'Brevitest unknown event');
             } else {
