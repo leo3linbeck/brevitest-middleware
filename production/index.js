@@ -7,19 +7,12 @@ const ARG_DELIM = ',';
 const ATTR_DELIM = ':';
 const ITEM_DELIM = '|';
 const END_DELIM = "#";
-const DELIMS = [ ARG_DELIM, ATTR_DELIM, ITEM_DELIM, END_DELIM ]
+// const DELIMS = [ ARG_DELIM, ATTR_DELIM, ITEM_DELIM, END_DELIM ]
 
 const login = () => {
 	return particle.login({
 		username: 'particle@brevitest.com',
 		password: 'FbM-c9p-SGJ-LN8'
-	});
-}
-
-const getDeviceInfo = (deviceId, token) => {
-	return particle.getDevice({
-		deviceId: deviceId,
-		auth: token
 	});
 }
 
@@ -157,7 +150,6 @@ const compileRepeatEnd = () => {
 }
 
 const bcodeCompile = (bcodeArray) => {
-    console.log('bcodeArray', bcodeArray);
     return bcodeArray.reduce((compiledCode, bcode) => {
         if (bcode.command === 'Comment') {
             return compiledCode;
@@ -262,8 +254,6 @@ const generateResponseString = (cartridgeId, code) => {
 }
 
 const validate_cartridge = (callback, deviceId, cartridgeId) => {
-	console.log('validate_cartridge', deviceId, cartridgeId);
-
 	if (!cartridgeId) {
         send_response(callback, deviceId, 'validate-cartridge', 'FAILURE', `Cartridge ID missing`);
     } else if (!deviceId) {
@@ -321,8 +311,6 @@ const validate_cartridge = (callback, deviceId, cartridgeId) => {
 }
 
 const test_status_update = (callback, deviceId, cartridgeId, event_type, new_status) => {
-    console.log(event_type, deviceId, cartridgeId);
-
 	if (!deviceId) {
         send_response(callback, deviceId, event_type, `FAILURE', 'Device ID missing`);
     } else if (!cartridgeId) {
@@ -343,7 +331,6 @@ const test_status_update = (callback, deviceId, cartridgeId, event_type, new_sta
                 }
             })
             .catch((error) => {
-                console.log(error);
                 if (error.message) {
                     send_response(callback, deviceId, event_type, 'FAILURE', error.message.slice(8));
                 } else {
@@ -390,8 +377,6 @@ const calculateResults = (readings) => {
 };
 
 const test_upload = (callback, deviceId, cartridgeId) => {
-	console.log('test-upload', deviceId, cartridgeId);
-
     let result = null;
 
 	if (!deviceId) {
@@ -436,7 +421,6 @@ const test_upload = (callback, deviceId, cartridgeId) => {
                 return saveDocument(cartridge);
             })
             .then((response) => {
-                console.log(response);
                 if (!response || !response.ok) {
                     throw new Error(`Cartridge ${cartridgeId} not saved`);
                 }
@@ -475,7 +459,7 @@ const register_device = (callback, deviceId) => {
 }
 
 const write_log = (deviceId, event_type, status, data) => {
-	console.log('write_log', deviceId, event_type, status, data);
+	// console.log('write_log', deviceId, event_type, status, data);
 	const loggedOn = new Date();
 	const _id = 'log_' + loggedOn.toISOString();
     const log_entry = {
