@@ -265,9 +265,9 @@ const validate_cartridge = (callback, deviceId, cartridgeId) => {
 	console.log('validate_cartridge', deviceId, cartridgeId);
 
 	if (!cartridgeId) {
-        send_response(callback, 'validate-cartridge', 'FAILURE', `Cartridge ID missing`);
+        send_response(callback, deviceId, 'validate-cartridge', 'FAILURE', `Cartridge ID missing`);
     } else if (!deviceId) {
-        send_response(callback, 'validate-cartridge', 'FAILURE', `Device ID missing`);
+        send_response(callback, deviceId, 'validate-cartridge', 'FAILURE', `Device ID missing`);
     } else {
         let code = null;
         const assayId = cartridgeId.slice(0, 8);
@@ -280,7 +280,7 @@ const validate_cartridge = (callback, deviceId, cartridgeId) => {
                 const device = response.rows[0].doc;
                 const assay = response.rows[1].doc;
                 const cartridge = response.rows[2].doc;
-                console.log('fetch', device, assay, cartridge)
+
                 if (cartridge.used) {
                     throw new Error(`Cartridge ${cartridgeId} already used`);
                 } else if (cartridge.status !== 'linked') {
@@ -292,11 +292,13 @@ const validate_cartridge = (callback, deviceId, cartridgeId) => {
                 } else if (cartridge.customerId !== device.customerId) {
                     throw new Error(`Cartridge customer ${cartridge.customerId} does not match device customer ${device.customerId}`);
                 }
+
                 code = assay.BCODE.code
                 cartridge.device = device;
                 cartridge.assay = assay;
                 cartridge.status = 'underway';
                 cartridge.used = true;
+                cartridge.startedOn = new Date();
                 return saveDocument(cartridge);
             })
             .then((response) => {
@@ -304,261 +306,148 @@ const validate_cartridge = (callback, deviceId, cartridgeId) => {
                     throw new Error(`Cartridge ${cartridgeId} could not be saved in the database`);
                 }
                 const responseString = generateResponseString(cartridgeId, code);
-                send_response(callback, 'validate-cartridge', 'SUCCESS', responseString);
+                send_response(callback, deviceId, 'validate-cartridge', 'SUCCESS', responseString);
             })
             .catch((error) => {
                 console.log(error);
                 if (error.message) {
-                    send_response(callback, 'validate-cartridge', 'FAILURE', error.message);
+                    send_response(callback, deviceId, 'validate-cartridge', 'FAILURE', error.message);
                 } else {
                     error.cartridgeId = cartridgeId;
-                    send_response(callback, 'validate-cartridge', 'ERROR', error);
+                    send_response(callback, deviceId, 'validate-cartridge', 'ERROR', error);
                 }
             });
     }
 }
 
-const test_start = (callback, deviceId, testId) => {
-    console.log('start_test', deviceId, testId);
+const test_status_update = (callback, deviceId, cartridgeId, event_type, new_status) => {
+    console.log(event_type, deviceId, cartridgeId);
 
 	if (!deviceId) {
-        send_response(callback, 'start-test', `FAILURE: Device ID missing`);
-    } else if (!testId) {
-        send_response(callback, 'start-test', `FAILURE: Test ID missing`);
+        send_response(callback, deviceId, event_type, `FAILURE', 'Device ID missing`);
+    } else if (!cartridgeId) {
+        send_response(callback, deviceId, event_type, `FAILURE', 'Cartridge ID missing`);
     } else {
-        getDocument(deviceId)
-		.then((device) => {
-			if (!device) {
-                throw new Error(`FAILURE: Device ${deviceId} not found`);
-			}
-			return { device, test: getDocument(testId) };
-		})
-		.then(({ device, test }) => {
-			if (!test) {
-                throw new Error(`FAILURE: Test ${testId} not found`);
-			} else if (!test.cartridge) {
-                throw new Error(`FAILURE: Cartridge for test ${testId} not found`);
-			} else if (!test.cartridge._id) {
-                throw new Error(`FAILURE: Cartridge ID for test ${testId} not found`);
-            }
+        getDocument(cartridgeId)
+		    .then((cartridge) => {
+                if (!cartridge) {
+                    throw new Error(`Cartridge ${cartridgeId} not found`);
+                }
 
-			test.device = device;
-			test.status = 'In progress';
-			test.percentComplete = 0;
-			test.startedOn = new Date();
-			return { test, response: saveDocument(test) };
-		})
-		.then(({ test, response }) => {
-			console.log(response);
-			if (!response || !response.ok) {
-                throw new Error(`FAILURE: Test ${testId} not saved`);
-            }
-			return getDocument(test.cartridge._id);
-		})
-		.then((cartridge) => {
-			if (!cartridge) {
-                throw new Error(`FAILURE: Cartridge for tests ${testId} not found`);
-			}
-			cartridge.used = true;
-			return saveDocument(cartridge);
-		})
-		.then((response) => {
-			console.log(response);
-			if (!response || !response.ok) {
-                throw new Error(`FAILURE: Cartridge for ${testId} not saved`);
-			}
-			send_response(callback, 'test-start', 'SUCCESS', testId);
-		})
-		.catch((error) => {
-			console.log(error);
-			if (error.message && error.message.slice(0,7) === 'FAILURE') {
-				send_response(callback, 'test-start', 'FAILURE', error.message.slice(8));
-			} else {
-				error.testId = testId;
-				send_response(callback, 'test-start', 'ERROR', error);
-			}
-		});    }
+                cartridge.status = new_status;
+			    return saveDocument(cartridge);
+            })
+            .then((response) => {
+                if (!(response && response.ok)) {
+                    throw new Error(`Cartridge ${cartridgeId} could not be saved in the database`);
+                }
+            })
+            .catch((error) => {
+                console.log(error);
+                if (error.message) {
+                    send_response(callback, deviceId, event_type, 'FAILURE', error.message.slice(8));
+                } else {
+                    error.cartridgeId = cartridgeId;
+                    send_response(callback, deviceId, event_type, 'ERROR', error);
+                }
+            })
+    }
 }
 
-const test_finish = (callback, deviceId, testId) => {
-	console.log('test-finish', testId);
-
-	if (!testId) {
-		send_response(callback, 'test-finish', 'FAILURE', 'No test id');
-	} else {
-		getDocument(testId)
-			.then((test) => {
-                if (!test) {
-                    throw new Error(`FAILURE: Test ${testId} not found`);
-                } else if (!test.cartridge) {
-                    throw new Error(`FAILURE: Cartridge for test ${testId} not found`);
-                } else if (!test.cartridge._id) {
-                    throw new Error(`FAILURE: Cartridge ID for test ${testId} not found`);
-                }
-    
-				test.status = 'Awaiting results';
-				test.percentComplete = 100;
-				test.finishedOn = new Date();
-
-				return saveDocument(test);
-			})
-			.then((response) => {
-				console.log(response);
-                if (!response || !response.ok) {
-                    throw new Error(`FAILURE: Test ${testId} not saved`);
-                }
-                send_response(callback, 'test-finish', 'SUCCESS', testId);
-			})
-			.catch((error) => {
-				console.log(error);
-				if (error.message && error.message.slice(0,7) === 'FAILURE') {
-					send_response(callback, 'test-finish', 'FAILURE', error.message.slice(8));
-				} else {
-					error.testId = testId;
-					send_response(callback, 'test-finish', 'ERROR', error);
-				}
-			});
-	}
-}
-
-const test_cancel = (callback, deviceId, testId) => {
-	console.log('test-cancel', testId);
-
-	if (!testId) {
-		send_response(callback, 'test-cancel', 'FAILURE', 'No test id');
-	} else {
-		getDocument(testId)
-			.then((test) => {
-                if (!test) {
-                    throw new Error(`FAILURE: Test ${testId} not found`);
-                } else if (!test.cartridge) {
-                    throw new Error(`FAILURE: Cartridge for test ${testId} not found`);
-                } else if (!test.cartridge._id) {
-                    throw new Error(`FAILURE: Cartridge ID for test ${testId} not found`);
-                }
-
-				test.status = 'Cancelled';
-				test.finishedOn = new Date();
-
-				return saveDocument(test);
-			})
-			.then((response) => {
-				console.log(response);
-                if (!response || !response.ok) {
-                    throw new Error(`FAILURE: Test ${testId} not saved`);
-                }
-				send_response(callback, 'test-cancel', 'SUCCESS', testId);
-			})
-			.catch((error) => {
-				console.log(error);
-				if (error.message && error.message.slice(0,7) === 'FAILURE') {
-					send_response(callback, 'test-cancel', 'FAILURE', error.message.slice(8));
-				} else {
-					error.testId = testId;
-					send_response(callback, 'test-cancel', 'ERROR', error);
-				}
-			});
-	}
-}
-
-const parseReading = (line) => {
-	const attr = line.split(ATTR_DELIM);
+const parseReading = (reading) => {
+	const args = reading.split(ARG_DELIM);
 	return {
-		channel: attr[0],
-		time: Date(parseInt(attr[1])),
-		x: parseInt(attr[2]),
-		y: parseInt(attr[3]),
-		z: parseInt(attr[4]),
-		temperature: parseInt(attr[5])
+		channel: args[0],
+		time: Date(parseInt(args[1], 16)),
+		x: parseInt(args[2], 16),
+		y: parseInt(args[3], 16),
+		z: parseInt(args[4], 16),
+		temperature: parseInt(args[5], 16)
 	};
 }
 
-const parseData = (str, testId) => {
-	const result = {};
-
+const parseData = (str) => {
 	const lines = str.split(ITEM_DELIM);
-    const attr = lines[0].split(ATTR_DELIM);
-    result.startedOn = Date(parseInt(attr[0]));
-    result.finishedOn = Date(parseInt(attr[1]));
-	result.cartridgeId = attr[2];
-	result.number_of_readings = lines.length - 3;
-	result.readings = lines.slice(3).map(reading => parseReading(reading))
-    return result;
+    const readings = lines[3].split(ATTR_DELIM);
+    return {
+        cartridgeId: lines[0],
+        startedOn: Date(parseInt(lines[1], 16)),
+        finishedOn: Date(parseInt(lines[2], 16)),
+        numberOfReadings: readings.length,
+        readings: lines.slice(3).map(reading => parseReading(reading))
+    }
 }
 
 const square = a => a * a;
+// const mean = a.length ? a.reduce((sum, elem) => (sum + elem), 0) / a.length : NaN;
 
 const xyzDiff = (r1, r2) => {
 	return Math.sqrt(square(r1.x - r2.x) + square(r1.y - r2.y) + square(r1.z - r2.z));
 }
 
-const calculateResults = (data) => {
-	if (data.length !== 4) {
-		return 'Invalid result - more than two readings of two channels';
-	}
-	if (!data[0].x) {
-		return 'Invalid result - sensor readings not found';
-	}
-
-	return Math.round(100000 * (xyzDiff(data[1], data[3]) - xyzDiff(data[0], data[2])), 0);
+const calculateResults = (readings) => {
+	return Math.round(((xyzDiff(readings[1], readings[3]) + xyzDiff(readings[1], readings[3])) * 0.5 - xyzDiff(readings[0], readings[2])), 0);
 };
 
-const test_upload = (callback, deviceId, testId) => {
-	console.log('upload-test', deviceId, testId);
+const test_upload = (callback, deviceId, cartridgeId) => {
+	console.log('test-upload', deviceId, cartridgeId);
+
+    let result = null;
 
 	if (!deviceId) {
-		send_response(callback, 'test-upload', 'FAILURE', 'No device id');
-	} else if (!testId) {
-		send_response(callback, 'test-upload', 'FAILURE', 'No test id');
+		send_response(callback, deviceId, 'test-upload', 'FAILURE', 'No device id');
+	} else if (!cartridgeId) {
+		send_response(callback, cartridgeId, 'test-upload', 'FAILURE', 'No cartridge id');
 	} else {
 		login(deviceId)
             .then((response) => {
                 const token = response.body.access_token;
-                return getTestData(deviceId, token);
+                return getVariable(deviceId, token);
             })
             .then((response) => {
                 if (!response || !response.body || !response.body.result) {
-                throw new Error(`FAILURE: Unable to get test ${testId} from device ${deviceId}`);
+                    throw new Error(`FAILURE: Unable to get test for cartridge ${cartridgeId} from device ${deviceId}`);
                 }
-                const result = parseData(response.body.result, testId);
-                if (result.testId !== testId) {
-                throw new Error(`FAILURE: Test ID ${testId} in device ${deviceId} does not match ID requested`);
+                result = parseData(response.body.result);
+                if (result.cartridgeId !== cartridgeId) {
+                    throw new Error(`FAILURE: Cartridge ID ${cartridgeId} in device ${deviceId} does not match Cartridge ID uploaded`);
                 }
-                delete result.testId;
-                return { result, test: getDocument(testId) };
+
+                return getDocument(cartridgeId);
             })
-            .then(({ result, test }) => {
-                if (!test) {
-                    throw new Error(`Test ${testId} not found`);
+            .then ((cartridge) => {
+                if (!cartridge) {
+                    throw new Error(`Cartridge ${cartridgeId} not found`);
                 }
-                test.rawData = result;
-                test.readout = (result && result.readings) ? calculateResults(test.rawData.readings) : '';
+
+                cartridge.rawData = result;
+                cartridge.readout = (result && result.readings) ? calculateResults(result.readings) : '';
                 
-                if (typeof test.readout !== 'number') {
-                    test.result = 'Unknown';
-                } else if (test.readout > test.assay.standardCurve.cutScores.redMax || test.readout < test.assay.standardCurve.cutScores.redMin) {
-                    test.result = 'Positive';
-                } else if (test.readout > test.assay.standardCurve.cutScores.greenMax || test.readout < test.assay.standardCurve.cutScores.greenMin) {
-                    test.result = 'Borderline';
+                if (typeof cartridge.readout !== 'number') {
+                    cartridge.result = 'Unknown';
+                } else if (cartridge.readout > cartridge.assay.standardCurve.cutScores.redMax || cartridge.readout < cartridge.assay.standardCurve.cutScores.redMin) {
+                    cartridge.result = 'Positive';
+                } else if (cartridge.readout > cartridge.assay.standardCurve.cutScores.greenMax || cartridge.readout < cartridge.assay.standardCurve.cutScores.greenMin) {
+                    cartridge.result = 'Borderline';
                 } else {
-                    test.result = 'Negative';
+                    cartridge.result = 'Negative';
                 }
-                test.status = 'Complete';
-                return saveDocument(test);
+                cartridge.status = 'completed';
+                return saveDocument(cartridge);
             })
             .then((response) => {
                 console.log(response);
                 if (!response || !response.ok) {
-                    throw new Error(`Test ${testId} not saved`);
+                    throw new Error(`Cartridge ${cartridgeId} not saved`);
                 }
-                send_response(callback, 'test-upload', 'SUCCESS', testId);
+                send_response(callback, deviceId, 'test-upload', 'SUCCESS', cartridgeId);
             })
             .catch((error) => {
                 if (error.message) {
-                    send_response(callback, 'test-upload', 'FAILURE', error.message);
+                    send_response(callback, deviceId, 'test-upload', 'FAILURE', error.message);
                 } else {
-                    error.testId = testId;
-                    send_response(callback, 'test-upload', 'ERROR', error);
+                    error.cartridgeId = cartridgeId;
+                    send_response(callback, deviceId, 'test-upload', 'ERROR', error);
                 }
             });
 	}
@@ -574,26 +463,26 @@ const register_device = (callback, deviceId) => {
 				if (!response || !response.ok) {
 	               throw new Error(`Device ${deviceId} not registered`);
                 }
-				send_response(callback, 'register-device', 'SUCCESS', deviceId);
+				send_response(callback, deviceId, 'register-device', 'SUCCESS', deviceId);
 			})
 			.catch((error) => {
 				if (error.message) {
-					send_response(callback, 'register-device', 'FAILURE', error.message);
+					send_response(callback, deviceId, 'register-device', 'FAILURE', error.message);
 				} else {
-					send_response(callback, 'register-device', 'ERROR', deviceId);
+					send_response(callback, deviceId, 'register-device', 'ERROR', deviceId);
 				}
 			});
 }
 
-const write_log = (event_name, event_type, status, data) => {
-	console.log('write_log', event_name, event_type, status, data);
+const write_log = (deviceId, event_type, status, data) => {
+	console.log('write_log', deviceId, event_type, status, data);
 	const loggedOn = new Date();
 	const _id = 'log_' + loggedOn.toISOString();
     const log_entry = {
         _id,
         schema: 'log',
 		loggedOn,
-		event: event_name,
+		deviceId,
 		type: event_type,
 		status,
         data
@@ -602,13 +491,13 @@ const write_log = (event_name, event_type, status, data) => {
 	return saveDocument(log_entry);
 }
 
-const send_response = (callback, event_type, status, data) => {
+const send_response = (callback, deviceId, event_type, status, data) => {
     const response = {
 		statusCode: 200,
     	"isBase64Encoded": false
     };
 
-	// write_log(event_name, event_type, status, data);
+	write_log(deviceId, event_type, status, data);
     const responseData = typeof(data) === 'object' ? JSON.stringify(data) : data;
     response.body = `${event_type}${ITEM_DELIM}${status}${ITEM_DELIM}${responseData}${END_DELIM}`
 
@@ -632,7 +521,7 @@ exports.handler = (event, context, callback) => {
             const body = parseEvent(event);
             // console.log('body', event.queryStringParameters, body);
             if (body.event_name !== 'brevitest-production') {
-                send_response(callback, 'unknown', 'ERROR', 'Brevitest unknown event');
+                send_response(callback, body.deviceId || 'unknown', 'unknown', 'ERROR', 'Brevitest unknown event');
             } else {
                 switch (body.event_type) {
                     case 'register-device':
@@ -641,14 +530,11 @@ exports.handler = (event, context, callback) => {
                     case 'validate-cartridge':
                         validate_cartridge(callback, body.deviceId, body.data);
                         break;
-                    case 'test-start':
-                        test_start(callback, body.deviceId, body.data);
-                        break;
                     case 'test-finish':
-                        test_finish(callback, body.deviceId, body.data);
+                        test_status_update(callback, body.deviceId, body.data, body.event_type, 'pending');
                         break;
                     case 'test-cancel':
-                        test_cancel(callback, body.deviceId, body.data);
+                        test_status_update(callback, body.deviceId, body.data, body.event_type, 'cancelled');
                         break;
                     case 'test-upload':
                         test_upload(callback, body.deviceId, body.data);
@@ -658,9 +544,9 @@ exports.handler = (event, context, callback) => {
                 }
             }
 		} else {
-			send_response(callback, 'unknown', 'ERROR', 'Brevitest event malformed');
+			send_response(callback, 'unknown', 'unknown', 'ERROR', 'Brevitest event malformed');
 		}
 	} else {
-		send_response(callback, 'unknown', 'ERROR', 'Brevitest request malformed');
+		send_response(callback, 'unknown', 'unknown', 'ERROR', 'Brevitest request malformed');
 	}
 }
