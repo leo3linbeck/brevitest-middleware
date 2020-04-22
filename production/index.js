@@ -240,10 +240,9 @@ const checksum = (str) => {
     return crc;
 }
 
-const generateTestString = (cartridgeId, assay, testId) => {
-    const bcode = assay.BCODE;
+const generateResponseString = (cartridgeId, code) => {
     const bcodeVersion = 2
-    const compiledBCODE =  bcodeCompile(bcode);
+    const compiledBCODE =  bcodeCompile(code);
     const result = [
         cartridgeId,
         bcodeVersion,
@@ -256,59 +255,6 @@ const generateTestString = (cartridgeId, assay, testId) => {
     return result.join(ITEM_DELIM);
 }
 
-const randHexDigits = (len) => {
-    return [...Array(Math.round(len)).keys()].reduce((a) => {
-        return (
-            a +
-            parseInt(Math.floor(Math.random() * 16), 10)
-                .toString(16)
-                .toUpperCase()
-        )
-	}, '')
-}
-
-const createTest = (cartridge, assay) => {
-    console.log('Creating new test', cartridge, assay);
-    
-    // primary key: 8 hex customerId, 11 char hex datetime, 3 random hex => 24 hex characters
-	const _id = `${cartridge.customerId}-${parseInt(Date.now(), 10).toString(16)}-${randHexDigits(3)}`; // length8 char customerId
-    const test = {
-        _id,
-        schema: 'test',
-        cartridge,
-        assay,
-        refNumber: 'Test auto-created by middleware',
-        status: 'In queue',
-        queuedOn: new Date()
-    };
-
-	return saveDocument(test)
-		.then((response) => {
-			test._rev = response.rev;
-			cartridge.testId = test._id;
-			return saveDocument(cartridge);
-		})
-		.then((response) => {
-			cartridge._rev = response.rev;
-			return test;
-		});
-}
-
-const pair_cartridge = (callback, deviceId, data) => {
-	console.log('pair_cartridge', deviceId, data);
-	const args = data.split('|');
-	const cartridgeId = args[0];
-	const orderId = args[1];
-
-	if (!cartridgeId) {
-        send_response(callback, 'pair-cartridge', 'FAILURE', `Cartridge ID missing`);
-    } else if (!deviceId) {
-        send_response(callback, 'pair-cartridge', 'FAILURE', `Device ID missing`);
-    } else {
-    	console.log('pair_cartridge')
-    }
-}
-
 const validate_cartridge = (callback, deviceId, cartridgeId) => {
 	console.log('validate_cartridge', deviceId, cartridgeId);
 
@@ -317,67 +263,46 @@ const validate_cartridge = (callback, deviceId, cartridgeId) => {
     } else if (!deviceId) {
         send_response(callback, 'validate-cartridge', 'FAILURE', `Device ID missing`);
     } else {
+        let bcode = '';
+        let responseString = cartridgeId;
         const assayId = cartridgeId.slice(0, 8);
-
-        getDocument(deviceId)
-            .then((device) => {
-                if (!device) {
-                    throw new Error(`Device ${deviceId} not found`);
-                } else if (!device.customerId) {
-                    throw new Error(`Customer ID for device ${deviceId} is missing`);
+        getDocument(assayId)
+            .then((assay) => {
+                if (!assay) {
+                    throw new Error(`FAILURE: Assay ${assayId} not found`);
                 }
-    
-                return getDocument(device.customerId);
+                bcode = assay.BCODE.code
+                return getDocument(cartridgeId)
             })
-            .then((customer) => {
-                if (!customer) {
-                    throw new Error(`Customer for device ${deviceId} not found`);
-                }
-    
-                return { customer, cartridge: getDocument(cartridgeId) };
-            })
-            .then(({ customer, cartridge }) => {
+            .then((cartridge) => {
                 if (!cartridge) {
                     throw new Error(`Cartridge ${cartridgeId} not found`);
                 } else if (cartridge.used) {
                     throw new Error(`Cartridge ${cartridgeId} already used`);
-                } else if (cartridge.customerId !== customer._id) {
-                    throw new Error(`Cartridge ${cartridgeId} does not belong to this customer`);
+                } else if (cartridge.status !== 'linked') {
+                    throw new Error(`Cartridge ${cartridgeId} is not linked to a sample`);
+                } else if (!cartridge.linkReference) {
+                    throw new Error(`Cartridge ${cartridgeId} is missing a reference for its sample`);
+                } else if (!cartridge.customerId) {
+                    throw new Error(`Cartridge ${cartridgeId} is not assigned to a customer`);
                 }
-    
-                return { cartridge, assay: getDocument(assayId) };
+                
+                cartridge.status = 'underway';
+                cartridge.used = true;
+                return saveDocument(cartridge);
             })
-            .then(({ cartridge, assay }) => {
-                if (!assay) {
-                    throw new Error(`Assay ${assayId} not found`);
+            .then((response) => {
+                if (!(response && response.ok)) {
+                    throw new Error(`Cartridge ${cartridgeId} could not be saved in the database`);
                 }
-                // VERIFY FOR VARIOUS USE CASES (PRESCANNED AND POSTSCANNED)
-                if (cartridge.testId) {
-                    return getDocument(context, cartridge.testId);
-                } else {
-                    console.log('creating new test');
-                    return { assay, test: createTest(cartridge, assay) };
-                }
-            })
-            .then(({ assay, test }) => {
-                if (!test) {
-                    throw new Error(`FAILURE: Test for cartridge ${cartridgeId} not found`);
-                } else if (test._id !== cartridge.testId) {
-                    throw new Error(`FAILURE: Test mismatch for cartridge ${cartridgeId}`);
-                } else if (test.status !== 'In queue') {
-                    throw new Error(`FAILURE: Cartridge ${cartridgeId} has not been queued`);
-                }
-    
-                const responseString = generateResponse(cartridgeId, assay, test._id);
+                const responseString = generateResponseString(cartridgeId, bcode);
                 console.log('validate-cartridge', 'SUCCESS', responseString);
                 send_response(callback, 'validate-cartridge', 'SUCCESS', responseString);
             })
             .catch((error) => {
                 console.log(error);
-                if (error.message && error.message.slice(0,7) === 'FAILURE') {
-                    send_response(callback, 'validate-cartridge', 'FAILURE', error.message.slice(8));
-                } else if (error.statusCode && error.statusCode === 404) {
-                    send_response(callback, 'validate-cartridge', 'FAILURE', cartridgeId + '\n' + error.message.slice(8));
+                if (error.message) {
+                    send_response(callback, 'validate-cartridge', 'FAILURE', error.message);
                 } else {
                     error.cartridgeId = cartridgeId;
                     send_response(callback, 'validate-cartridge', 'ERROR', error);
@@ -705,9 +630,6 @@ exports.handler = (event, context, callback) => {
                 switch (body.event_type) {
                     case 'register-device':
                         register_device(callback, body.deviceId);
-                        break;
-                    case 'pair-cartridge':
-                        pair_cartridge(callback, body.deviceId, body.data);
                         break;
                     case 'validate-cartridge':
                         validate_cartridge(callback, body.deviceId, body.data);
