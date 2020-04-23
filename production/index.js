@@ -341,8 +341,8 @@ const test_status_update = (callback, deviceId, cartridgeId, event_type, new_sta
                 if (!cartridge) {
                     throw new Error(`Cartridge ${cartridgeId} not found`);
                 }
-
                 cartridge.status = new_status;
+                console.log('cartridge', cartridge);
 			    return saveDocument(cartridge);
             })
             .then((response) => {
