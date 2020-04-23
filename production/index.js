@@ -320,7 +320,6 @@ const validate_cartridge = (callback, deviceId, cartridgeId) => {
                 send_response(callback, deviceId, 'validate-cartridge', 'SUCCESS', responseString);
             })
             .catch((error) => {
-                console.log(error);
                 if (error.message) {
                     send_response(callback, deviceId, 'validate-cartridge', 'FAILURE', error.message);
                 } else {
@@ -365,7 +364,6 @@ const test_status_update = (callback, deviceId, cartridgeId, event_type, new_sta
 
 const parseReading = (reading) => {
 	const args = reading.split(ARG_DELIM);
-    console.log('args', args);
 	return {
 		channel: args[0],
 		time: Date(parseInt(args[1], 16)),
@@ -378,9 +376,7 @@ const parseReading = (reading) => {
 
 const parseData = (str) => {
 	const lines = str.split(ITEM_DELIM);
-    console.log('lines', lines);
     const readings = lines[3].split(ATTR_DELIM).map(reading => parseReading(reading));
-    console.log('readings', readings);
     return {
         cartridgeId: lines[0],
         startedOn: Date(parseInt(lines[1], 16)),
@@ -418,10 +414,8 @@ const test_upload = (callback, deviceId, cartridgeId) => {
                 if (!response || !response.body || !response.body.result) {
                     throw new Error(`FAILURE: Unable to get test for cartridge ${cartridgeId} from device ${deviceId}`);
                 }
-                console.log('response', response);
                 result = parseData(response.body.result);
 
-                console.log('result', result);
                 if (result.cartridgeId !== cartridgeId) {
                     throw new Error(`FAILURE: Cartridge ID ${cartridgeId} in device ${deviceId} does not match Cartridge ID uploaded`);
                 }
@@ -510,7 +504,6 @@ exports.handler = (event, context, callback) => {
 	if (event) {
 		if (event.queryStringParameters) {
             const body = parseEvent(event);
-            // console.log('body', event.queryStringParameters, body);
             if (body.event_name !== 'brevitest-production') {
                 send_response(callback, body.deviceId || 'unknown', 'unknown', 'ERROR', 'Brevitest unknown event');
             } else {
