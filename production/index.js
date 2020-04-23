@@ -253,6 +253,27 @@ const generateResponseString = (cartridgeId, code) => {
     return result.join(ITEM_DELIM);
 }
 
+const register_device = (callback, deviceId) => {
+    getDocument(deviceId)
+        .then ((device) => {
+            device.lastActiveOn = new Date();
+            return saveDocument(device);
+        })
+        .then((response) => {
+            if (!response || !response.ok) {
+               throw new Error(`Device ${deviceId} not registered`);
+            }
+            send_response(callback, deviceId, 'register-device', 'SUCCESS', deviceId);
+        })
+        .catch((error) => {
+            if (error.message) {
+                send_response(callback, deviceId, 'register-device', 'FAILURE', error.message);
+            } else {
+                send_response(callback, deviceId, 'register-device', 'ERROR', deviceId);
+            }
+        });
+}
+
 const validate_cartridge = (callback, deviceId, cartridgeId) => {
 	if (!cartridgeId) {
         send_response(callback, deviceId, 'validate-cartridge', 'FAILURE', `Cartridge ID missing`);
@@ -329,6 +350,7 @@ const test_status_update = (callback, deviceId, cartridgeId, event_type, new_sta
                 if (!(response && response.ok)) {
                     throw new Error(`Cartridge ${cartridgeId} could not be saved in the database`);
                 }
+                send_response(callback, deviceId, event_type, 'SUCCESS', cartridgeId);
             })
             .catch((error) => {
                 if (error.message) {
@@ -343,6 +365,7 @@ const test_status_update = (callback, deviceId, cartridgeId, event_type, new_sta
 
 const parseReading = (reading) => {
 	const args = reading.split(ARG_DELIM);
+    console.log('args', args);
 	return {
 		channel: args[0],
 		time: Date(parseInt(args[1], 16)),
@@ -355,13 +378,15 @@ const parseReading = (reading) => {
 
 const parseData = (str) => {
 	const lines = str.split(ITEM_DELIM);
-    const readings = lines[3].split(ATTR_DELIM);
+    console.log('lines', lines);
+    const readings = lines[3].split(ATTR_DELIM).map(reading => parseReading(reading));
+    console.log('readings', readings);
     return {
         cartridgeId: lines[0],
         startedOn: Date(parseInt(lines[1], 16)),
         finishedOn: Date(parseInt(lines[2], 16)),
         numberOfReadings: readings.length,
-        readings: lines.slice(3).map(reading => parseReading(reading))
+        readings
     }
 }
 
@@ -393,7 +418,10 @@ const test_upload = (callback, deviceId, cartridgeId) => {
                 if (!response || !response.body || !response.body.result) {
                     throw new Error(`FAILURE: Unable to get test for cartridge ${cartridgeId} from device ${deviceId}`);
                 }
+                console.log('response', response);
                 result = parseData(response.body.result);
+
+                console.log('result', result);
                 if (result.cartridgeId !== cartridgeId) {
                     throw new Error(`FAILURE: Cartridge ID ${cartridgeId} in device ${deviceId} does not match Cartridge ID uploaded`);
                 }
@@ -435,27 +463,6 @@ const test_upload = (callback, deviceId, cartridgeId) => {
                 }
             });
 	}
-}
-
-const register_device = (callback, deviceId) => {
-		getDocument(deviceId)
-			.then ((device) => {
-				device.lastActiveOn = new Date();
-				return saveDocument(device);
-			})
-			.then((response) => {
-				if (!response || !response.ok) {
-	               throw new Error(`Device ${deviceId} not registered`);
-                }
-				send_response(callback, deviceId, 'register-device', 'SUCCESS', deviceId);
-			})
-			.catch((error) => {
-				if (error.message) {
-					send_response(callback, deviceId, 'register-device', 'FAILURE', error.message);
-				} else {
-					send_response(callback, deviceId, 'register-device', 'ERROR', deviceId);
-				}
-			});
 }
 
 const write_log = (deviceId, event_type, status, data) => {
