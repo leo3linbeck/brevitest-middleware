@@ -364,12 +364,17 @@ const test_status_update = (callback, deviceId, cartridgeId, event_type, new_sta
 
 const parseReading = (reading) => {
 	const args = reading.split(ARG_DELIM);
-	return {
+    const x = parseInt(args[2], 16);
+    const y = parseInt(args[3], 16);
+    const z = parseInt(args[4], 16);
+    const l = Math.sqrt(x * x + y * y + z * z);
+return {
 		channel: args[0],
 		time: Date(parseInt(args[1], 16)),
-		x: parseInt(args[2], 16),
-		y: parseInt(args[3], 16),
-		z: parseInt(args[4], 16),
+		x,
+		y,
+        z,
+        l,
 		temperature: parseInt(args[5], 16)
 	};
 }
@@ -393,8 +398,27 @@ const xyzDiff = (r1, r2) => {
 	return Math.sqrt(square(r1.x - r2.x) + square(r1.y - r2.y) + square(r1.z - r2.z));
 }
 
-const calculateResults = (readings) => {
-	return Math.round(((xyzDiff(readings[1], readings[3]) + xyzDiff(readings[1], readings[3])) * 0.5 - xyzDiff(readings[0], readings[2])), 0);
+const readoutValue = (channel, readings) => {
+    if (channel === 'A') {
+        return Math.round(readings[0].l - (readings[9].l + readings[6].l) * 0.5);
+    } else if (channel === '1') {
+        return Math.round(readings[1].l - (readings[10].l + readings[7].l) * 0.5);
+    } else if (channel === '2') {
+        return Math.round(readings[2].l - (readings[11].l + readings[8].l) * 0.5);
+    } else {
+        return 0;
+    }
+}
+
+const calculateReadouts = (readings) => {
+    const sample = readoutValue('A', readings);
+    const control1 = readoutValue('1', readings);
+    const control2 = readoutValue('2', readings);
+	return {
+        sample,
+        control1,
+        control2
+    }
 };
 
 const test_upload = (callback, deviceId, cartridgeId) => {
@@ -428,13 +452,13 @@ const test_upload = (callback, deviceId, cartridgeId) => {
                 }
 
                 cartridge.rawData = result;
-                cartridge.readout = (result && result.readings) ? calculateResults(result.readings) : '';
+                cartridge.readouts = (result && result.readings && result.readings.length === 12) ? calculateReadouts(result.readings) : {};
                 
-                if (typeof cartridge.readout !== 'number') {
+                if (typeof cartridge.readouts.sample !== 'number') {
                     cartridge.result = 'Unknown';
-                } else if (cartridge.readout > cartridge.assay.standardCurve.cutScores.redMax || cartridge.readout < cartridge.assay.standardCurve.cutScores.redMin) {
+                } else if (cartridge.readouts.sample > cartridge.assay.standardCurve.cutScores.redMax || cartridge.readouts.sample < cartridge.assay.standardCurve.cutScores.redMin) {
                     cartridge.result = 'Positive';
-                } else if (cartridge.readout > cartridge.assay.standardCurve.cutScores.greenMax || cartridge.readout < cartridge.assay.standardCurve.cutScores.greenMin) {
+                } else if (cartridge.readouts.sample > cartridge.assay.standardCurve.cutScores.greenMax || cartridge.readouts.sample < cartridge.assay.standardCurve.cutScores.greenMin) {
                     cartridge.result = 'Borderline';
                 } else {
                     cartridge.result = 'Negative';
