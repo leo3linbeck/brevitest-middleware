@@ -367,7 +367,7 @@ const parseReading = (reading) => {
     const x = parseInt(args[2], 16);
     const y = parseInt(args[3], 16);
     const z = parseInt(args[4], 16);
-    const l = Math.sqrt(x * x + y * y + z * z);
+    const l = Math.round(Math.sqrt(x * x + y * y + z * z));
 return {
 		channel: args[0],
 		time: Date(parseInt(args[1], 16)),
