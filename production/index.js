@@ -400,11 +400,11 @@ const xyzDiff = (r1, r2) => {
 
 const readoutValue = (channel, readings) => {
     if (channel === 'A') {
-        return Math.round(readings[0].l - (readings[9].l + readings[6].l) * 0.5);
+        return Math.round(readings[0].L - (readings[9].L + readings[6].L) * 0.5);
     } else if (channel === '1') {
-        return Math.round(readings[1].l - (readings[10].l + readings[7].l) * 0.5);
+        return Math.round(readings[1].L - (readings[10].L + readings[7].L) * 0.5);
     } else if (channel === '2') {
-        return Math.round(readings[2].l - (readings[11].l + readings[8].l) * 0.5);
+        return Math.round(readings[2].L - (readings[11].L + readings[8].L) * 0.5);
     } else {
         return 0;
     }
