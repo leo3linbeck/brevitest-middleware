@@ -382,12 +382,20 @@ return {
 }
 
 const parseData = (str) => {
-	const lines = str.split(ITEM_DELIM);
-    const readings = lines[3].split(ATTR_DELIM).map(reading => parseReading(reading));
-    return {
-        cartridgeId: lines[0],
-        numberOfReadings: readings.length,
-        readings
+    const lines = str.split(ITEM_DELIM);
+    if (lines[1] === 'A') {
+        const readings = lines[2].split(ATTR_DELIM).map(reading => parseReading(reading));
+        return {
+            cartridgeId: lines[0],
+            numberOfReadings: readings.length,
+            readings
+        }
+    } else {
+        return {
+            cartridgeId: lines[0],
+            numberOfReadings: 0,
+            readings: []
+        }
     }
 }
 
