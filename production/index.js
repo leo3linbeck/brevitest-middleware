@@ -342,7 +342,7 @@ const test_status_update = (callback, deviceId, cartridgeId, event_type, new_sta
                     throw new Error(`Cartridge ${cartridgeId} not found`);
                 }
                 cartridge.status = new_status;
-                if (new_status === 'completed' || new_status === 'cancelled') {
+                if (new_status === 'pending' || new_status === 'cancelled') {
                     cartridge.testFinishedOn = new Date();
                 }
                 console.log('cartridge', cartridge);
