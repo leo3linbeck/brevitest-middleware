@@ -309,7 +309,7 @@ const validate_cartridge = (callback, deviceId, cartridgeId) => {
                 cartridge.assay = assay;
                 cartridge.status = 'underway';
                 cartridge.used = true;
-                cartridge.startedOn = new Date();
+                cartridge.testStartedOn = new Date();
                 return saveDocument(cartridge);
             })
             .then((response) => {
@@ -342,6 +342,9 @@ const test_status_update = (callback, deviceId, cartridgeId, event_type, new_sta
                     throw new Error(`Cartridge ${cartridgeId} not found`);
                 }
                 cartridge.status = new_status;
+                if (new_status === 'completed' || new_status === 'cancelled') {
+                    cartridge.testFinishedOn = new Date();
+                }
                 console.log('cartridge', cartridge);
 			    return saveDocument(cartridge);
             })
@@ -364,18 +367,17 @@ const test_status_update = (callback, deviceId, cartridgeId, event_type, new_sta
 
 const parseReading = (reading) => {
 	const args = reading.split(ARG_DELIM);
-    const x = parseInt(args[2], 16);
-    const y = parseInt(args[3], 16);
-    const z = parseInt(args[4], 16);
+    const x = parseInt(args[1], 16);
+    const y = parseInt(args[2], 16);
+    const z = parseInt(args[3], 16);
     const L = Math.round(Math.sqrt(x * x + y * y + z * z));
 return {
 		channel: args[0],
-		time: Date(parseInt(args[1], 16)),
 		x,
 		y,
         z,
         L,
-		temperature: parseInt(args[5], 16)
+		temperature: parseInt(args[4], 16)
 	};
 }
 
@@ -384,8 +386,6 @@ const parseData = (str) => {
     const readings = lines[3].split(ATTR_DELIM).map(reading => parseReading(reading));
     return {
         cartridgeId: lines[0],
-        startedOn: Date(parseInt(lines[1], 16)),
-        finishedOn: Date(parseInt(lines[2], 16)),
         numberOfReadings: readings.length,
         readings
     }
