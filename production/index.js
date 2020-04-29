@@ -1,4 +1,10 @@
-const db = require('nano')('http://brevitestdatabase.com:5984/development');
+const db = require('nano')({
+    url : "https://brevitest-couchdb.com:6984/production",
+    auth: {
+        username: 'admin',
+        password: 'f@nn!n.drn0'
+    }
+});
 const Particle = require('particle-api-js');
 
 const particle = new Particle();
