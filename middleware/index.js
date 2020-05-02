@@ -1,10 +1,15 @@
-const db = require('nano')({
-    url : "https://brevitest-couchdb.com:6984/production",
-    auth: {
-        username: 'admin',
-        password: 'f@nn!n.drn0'
-    }
-});
+const auth = {
+    username: 'admin',
+    password: 'f@nn!n.drn0'
+};
+
+console.log('starting');
+const couchdb = require('nano')('https://brevitest-couchdb.com:6984');
+console.log('couchdb', couchdb);
+couchdb.auth()
+const db = couchdb.use('production');
+console.log('db', db);
+
 const Particle = require('particle-api-js');
 
 const particle = new Particle();
@@ -262,10 +267,12 @@ const generateResponseString = (cartridgeId, code) => {
 const register_device = (callback, deviceId) => {
     getDocument(deviceId)
         .then ((device) => {
+            console.log('register_device getDocument', deviceId, device);
             device.lastActiveOn = new Date();
             return saveDocument(device);
         })
         .then((response) => {
+            console.log('register_device saveDocument', deviceId, response);
             if (!response || !response.ok) {
                throw new Error(`Device ${deviceId} not registered`);
             }
