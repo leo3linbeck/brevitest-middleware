@@ -1,0 +1,28 @@
+{
+  "name": "brevitest-middleware",
+  "version": "1.0.0",
+  "description": "Middleware for Brevitest diagnostic system",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "engines": {
+    "node": ">=7.6.0",
+    "npm": ">=4.1.2"
+  },
+  "author": "Leo Linbeck III",
+  "license": "MIT",
+  "dependencies": {
+    "nano": "^8.2.2",
+    "particle-api-js": "^8.3.0"
+  },
+  "devDependencies": {},
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/leo3linbeck/brevitest-middleware.git"
+  },
+  "bugs": {
+    "url": "https://github.com/leo3linbeck/brevitest-middleware/issues"
+  },
+  "homepage": "https://github.com/leo3linbeck/brevitest-middleware/blob/master/README.md"
+}
