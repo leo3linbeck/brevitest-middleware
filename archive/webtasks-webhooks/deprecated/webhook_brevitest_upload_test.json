@@ -1,0 +1,6 @@
+{
+    "eventName": "brevitest-upload-test",
+    "url": "https://wt-leo3-linbeck_com-0.run.webtask.io/webtask_brevitest_upload_test",
+    "requestType": "POST",
+    "mydevices": true
+}

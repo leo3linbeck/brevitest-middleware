@@ -1,0 +1,6 @@
+{
+    "eventName": "brevitest-validate",
+    "url": "https://wt-leo3-linbeck_com-0.run.webtask.io/webtask_brevitest_validate",
+    "requestType": "POST",
+    "mydevices": true
+}

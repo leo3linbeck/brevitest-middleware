@@ -1,0 +1,8 @@
+{
+    "eventName": "brevitest",
+    "url": "https://wt-leo3-linbeck_com-0.sandbox.auth0-extend.com/webtask_brevitest",
+    "requestType": "POST",
+    "responseTopic": "hook-response/brevitest-{{SPARK_CORE_ID}}",
+    "errorResponseTopic": "hook-error/brevitest-{{SPARK_CORE_ID}}",
+    "mydevices": true
+}

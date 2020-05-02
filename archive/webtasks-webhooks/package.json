@@ -1,0 +1,7 @@
+{
+ "dependencies": {
+   "request": "2.x",
+   "request-promise-native": "1.x",
+   "particle-api-js": "7.x"
+ }
+}
