@@ -4,7 +4,7 @@ const auth = {
 };
 
 const nano = require('nano')({
-    url: `https://${auth.username}:${auth.password}@brevitest-couchdb.com:6984`,
+    url: `https://brevitest-couchdb.com:6984`,
     requestDefaults: {
         jar: true
     }
@@ -550,13 +550,13 @@ const parseEvent = (event) => {
 
 exports.handler = (event, context, callback) => {
     console.log('starting', event);
-    // nano.auth(auth.username, auth.password)
-    //     .then((context) => {
-    //         console.log('couchdb auth context', context);
-    //     })
-    //     .catch((error) => {
-    //         console.log('ERROR: couchdb auth', error);
-    //     });
+    nano.auth(auth.username, auth.password)
+        .then((context) => {
+            console.log('couchdb auth context', context);
+        })
+        .catch((error) => {
+            console.log('ERROR: couchdb auth', error);
+        });
 
 	if (event) {
 		if (event.queryStringParameters) {
