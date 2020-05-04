@@ -3,12 +3,14 @@ const auth = {
     password: 'f@nn!n.drn0'
 };
 
-console.log('starting');
-const couchdb = require('nano')('https://brevitest-couchdb.com:6984');
-console.log('couchdb', couchdb);
-couchdb.auth()
-const db = couchdb.use('production');
-console.log('db', db);
+const nano = require('nano')({
+    url: `https://${auth.username}:${auth.password}@brevitest-couchdb.com:6984`,
+    requestDefaults: {
+        jar: true
+    }
+});
+
+const db = nano.db.use('production');
 
 const Particle = require('particle-api-js');
 
@@ -265,6 +267,7 @@ const generateResponseString = (cartridgeId, code) => {
 }
 
 const register_device = (callback, deviceId) => {
+    console.log('register_device enter', deviceId);
     getDocument(deviceId)
         .then ((device) => {
             console.log('register_device getDocument', deviceId, device);
@@ -546,14 +549,25 @@ const parseEvent = (event) => {
 }
 
 exports.handler = (event, context, callback) => {
+    console.log('starting', event);
+    // nano.auth(auth.username, auth.password)
+    //     .then((context) => {
+    //         console.log('couchdb auth context', context);
+    //     })
+    //     .catch((error) => {
+    //         console.log('ERROR: couchdb auth', error);
+    //     });
+
 	if (event) {
 		if (event.queryStringParameters) {
             const body = parseEvent(event);
+            console.log('body', body);
             if (body.event_name !== 'brevitest-production') {
                 send_response(callback, body.deviceId || 'unknown', 'unknown', 'ERROR', 'Brevitest unknown event');
             } else {
                 switch (body.event_type) {
                     case 'register-device':
+                        console.log('register_device');
                         register_device(callback, body.deviceId);
                         break;
                     case 'validate-cartridge':
