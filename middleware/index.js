@@ -536,7 +536,7 @@ exports.handler = (event, context, callback) => {
 	if (event) {
 		if (event.queryStringParameters) {
             const body = parseEvent(event);
-            if (body.event_name !== 'brevitest-production') {
+            if (body.event_name !== 'brevitest-development') {
                 send_response(callback, body.deviceId || 'unknown', 'unknown', 'ERROR', 'Brevitest unknown event');
             } else {
                 switch (body.event_type) {
