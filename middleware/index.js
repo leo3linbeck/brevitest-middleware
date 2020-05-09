@@ -1,16 +1,33 @@
-const auth = {
-    username: 'admin',
-    password: 'f@nn!n.drn0'
-};
+const PouchDB = require('pouchdb')
 
-const nano = require('nano')({
-    url: `https://brevitest-couchdb.com:6984`,
-    requestDefaults: {
-        jar: true
+const db = new PouchDB('https://brevitest-couchdb.com:6984/production', {
+    auth: {
+        username: 'admin',
+        password: 'f@nn!n.drn0'
     }
 });
 
-const db = nano.db.use('production');
+    // const auth = {
+//     username: 'admin',
+//     password: 'f@nn!n.drn0'
+// };
+
+// const nano = require('nano')({
+//     url: `https://brevitest-couchdb.com:6984`
+    // requestDefaults: {
+    //     jar: true
+    // }
+// });
+
+// nano.auth(auth.username, auth.password)
+//     .then((context) => {
+//         console.log('couchdb auth context', context);
+//     })
+//     .catch((error) => {
+//         console.log('ERROR: couchdb auth context', error);
+//     })
+
+// const db = nano.db.use('production');
 
 const Particle = require('particle-api-js');
 
@@ -38,7 +55,7 @@ const getVariable = (deviceId, token) => {
 }
 
 const saveDocument = (doc) => {
-	return db.insert(doc);
+	return db.put(doc);
 }
 
 const getDocument = (docId) => {
@@ -46,7 +63,7 @@ const getDocument = (docId) => {
 }
 
 const fetchDocuments = (keys) => {
-    return db.fetch({ keys });
+    return db.allDocs({ keys });
 }
 
 const bcodeCommands = [{
@@ -530,7 +547,7 @@ const send_response = (callback, deviceId, event_type, status, data) => {
     	"isBase64Encoded": false
     };
 
-	write_log(deviceId, event_type, status, data);
+	// write_log(deviceId, event_type, status, data);
     const responseData = typeof(data) === 'object' ? JSON.stringify(data) : data;
     response.body = `${event_type}${ITEM_DELIM}${status}${ITEM_DELIM}${responseData}${END_DELIM}`
 
@@ -550,14 +567,6 @@ const parseEvent = (event) => {
 
 exports.handler = (event, context, callback) => {
     console.log('starting', event);
-    nano.auth(auth.username, auth.password)
-        .then((context) => {
-            console.log('couchdb auth context', context);
-        })
-        .catch((error) => {
-            console.log('ERROR: couchdb auth', error);
-        });
-
 	if (event) {
 		if (event.queryStringParameters) {
             const body = parseEvent(event);
@@ -581,6 +590,9 @@ exports.handler = (event, context, callback) => {
                         break;
                     case 'test-upload':
                         test_upload(callback, body.deviceId, body.data);
+                        break;
+                    case 'test-event':
+                        send_response(callback, body.event_type, 'SUCCESS', 'Test event received', body);
                         break;
                     default:
                         send_response(callback, body.event_type, 'FAILURE', `Event not found:${body.event_type}`);
