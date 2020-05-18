@@ -1,15 +1,8 @@
 const axios = require('axios')
 const Particle = require('particle-api-js');
 
-const auth = {
-    username: 'admin',
-    password: 'f@nn!n.Drn0'
-}
-const auth64 = Buffer.from(`${auth.username}:${auth.password}`).toString('base64') // YWRtaW46ZkBubiFuLkRybjA=
-console.log('auth64', auth64)
-
 axios.defaults.baseURL = 'https://brevitest-couchdb.com:6984';
-axios.defaults.headers.common['Authorization'] = `Basic ${auth64}`;
+axios.defaults.headers.common['Authorization'] = `Basic YWRtaW46ZkBubiFuLkRybjA=`;
 
 const particle = new Particle();
 
@@ -43,7 +36,7 @@ const getDocument = (docId) => {
 }
 
 const fetchDocuments = (keys) => {
-    return axios.post(`/production/_all_docs`, keys, { include_docs: true });
+    return axios.post(`/production/_all_docs`, { keys },  { params: { include_docs: true } });
 }
 
 const bcodeCommands = [{
@@ -267,20 +260,19 @@ const register_device = (callback, deviceId) => {
     console.log('register_device enter', deviceId);
     getDocument(deviceId)
         .then ((response) => {
-            if (response.status !== 200) {
+            if (response.status !== 200 && response.status !== 304) {
                throw new Error(`Device ${deviceId} load error - response = ${response}`);
             }
             const device = response.data;
-            console.log('register_device getDocument', deviceId, device);
             device.lastActiveOn = new Date();
             return saveDocument(device);
         })
         .then((response) => {
-            console.log('register_device saveDocument', deviceId, response);
-            if (response.status !== 201) {
-               throw new Error(`Device ${deviceId} not registered`);
+            if (response.status === 201 || response.status === 202) {
+                send_response(callback, deviceId, 'register-device', 'SUCCESS', deviceId);
+            } else {
+                throw new Error(`Device ${deviceId} not registered`);
             }
-            send_response(callback, deviceId, 'register-device', 'SUCCESS', deviceId);
         })
         .catch((error) => {
             if (error.message) {
@@ -299,22 +291,24 @@ const validate_cartridge = (callback, deviceId, cartridgeId) => {
     } else {
         let code = null;
         const assayId = cartridgeId.slice(0, 8);
+        console.log(deviceId, assayId, cartridgeId)
         fetchDocuments([deviceId, assayId, cartridgeId])
             .then((response) => {
-                if (!(response && response.rows && (response.rows.length === 3))) {
+                if (!response || response.status !== 200 || !response.data.rows || (response.data.rows.length !== 3)) {
                     throw new Error(`Could not find device ${deviceId}, assay ${assayId}, or cartridge ${cartridgeId}`);
                 }
-
-                const device = response.rows[0].doc;
-                const assay = response.rows[1].doc;
-                const cartridge = response.rows[2].doc;
+                const rows = response.data.rows;
+                console.log(rows[0].value);
+                const device = rows[0].doc;
+                const assay = rows[1].doc;
+                const cartridge = rows[2].doc;
 
                 if (cartridge.used) {
                     throw new Error(`Cartridge ${cartridgeId} already used`);
                 } else if (cartridge.status !== 'linked') {
                     throw new Error(`Cartridge ${cartridgeId} is not linked to a sample`);
-                } else if (!cartridge.linkReference) {
-                    throw new Error(`Cartridge ${cartridgeId} is missing a reference for its sample`);
+                } else if (!cartridge.orderId) {
+                    throw new Error(`Cartridge ${cartridgeId} is missing an order number`);
                 } else if (!cartridge.customerId) {
                     throw new Error(`Cartridge ${cartridgeId} is not assigned to a customer`);
                 } else if (cartridge.customerId !== device.customerId) {
@@ -330,18 +324,18 @@ const validate_cartridge = (callback, deviceId, cartridgeId) => {
                 return saveDocument(cartridge);
             })
             .then((response) => {
-                if (!(response && response.ok)) {
+                if (response.status === 201 || response.status === 202) {
+                    const responseString = generateResponseString(cartridgeId, code);
+                    send_response(callback, deviceId, 'validate-cartridge', 'SUCCESS', responseString);
+                } else {
                     throw new Error(`Cartridge ${cartridgeId} could not be saved in the database`);
                 }
-                const responseString = generateResponseString(cartridgeId, code);
-                send_response(callback, deviceId, 'validate-cartridge', 'SUCCESS', responseString);
             })
             .catch((error) => {
                 if (error.message) {
                     send_response(callback, deviceId, 'validate-cartridge', 'FAILURE', error.message);
                 } else {
-                    error.cartridgeId = cartridgeId;
-                    send_response(callback, deviceId, 'validate-cartridge', 'ERROR', error);
+                    send_response(callback, deviceId, 'validate-cartridge', 'ERROR', deviceId);
                 }
             });
     }
@@ -354,31 +348,33 @@ const test_status_update = (callback, deviceId, cartridgeId, event_type, new_sta
         send_response(callback, deviceId, event_type, `FAILURE', 'Cartridge ID missing`);
     } else {
         getDocument(cartridgeId)
-		    .then((cartridge) => {
-                if (!cartridge) {
-                    throw new Error(`Cartridge ${cartridgeId} not found`);
-                }
-                cartridge.status = new_status;
-                if (new_status === 'pending' || new_status === 'cancelled') {
-                    cartridge.testFinishedOn = new Date();
-                }
-                console.log('cartridge', cartridge);
-			    return saveDocument(cartridge);
-            })
-            .then((response) => {
-                if (!(response && response.ok)) {
-                    throw new Error(`Cartridge ${cartridgeId} could not be saved in the database`);
-                }
+        .then ((response) => {
+            if (response.status !== 200 && response.status !== 304) {
+                throw new Error(`Cartridge ${cartridgeId} not found`);
+            }
+            const cartridge = response.data;
+            console.log('cartridge', cartridge);
+            cartridge.status = new_status;
+            if (new_status === 'pending' || new_status === 'cancelled') {
+                cartridge.testFinishedOn = new Date();
+            }
+            return saveDocument(cartridge);
+        })
+        .then((response) => {
+            if (response.status === 201 || response.status === 202) {
                 send_response(callback, deviceId, event_type, 'SUCCESS', cartridgeId);
-            })
-            .catch((error) => {
-                if (error.message) {
-                    send_response(callback, deviceId, event_type, 'FAILURE', error.message.slice(8));
-                } else {
-                    error.cartridgeId = cartridgeId;
-                    send_response(callback, deviceId, event_type, 'ERROR', error);
-                }
-            })
+            } else {
+                throw new Error(`Cartridge ${cartridgeId} could not be saved in the database`);
+            }
+        })
+        .catch((error) => {
+            if (error.message) {
+                send_response(callback, deviceId, event_type, 'FAILURE', error.message.slice(8));
+            } else {
+                error.cartridgeId = cartridgeId;
+                send_response(callback, deviceId, event_type, 'ERROR', error);
+            }
+        });
     }
 }
 
@@ -471,13 +467,14 @@ const test_upload = (callback, deviceId, cartridgeId) => {
 
                 return getDocument(cartridgeId);
             })
-            .then ((cartridge) => {
-                if (!cartridge) {
+            .then ((response) => {
+                if (!response || response.status !== 200 || response.status !== 304) {
                     throw new Error(`Cartridge ${cartridgeId} not found`);
                 }
 
+                const cartridge = response.data;
                 cartridge.rawData = result;
-                cartridge.readouts = (result && result.readings && result.readings.length === 12) ? calculateReadouts(result.readings) : {};
+                cartridge.readouts = (result && result.readings && result.readings.length === 15) ? calculateReadouts(result.readings) : {};
                 
                 if (typeof cartridge.readouts.sample !== 'number') {
                     cartridge.result = 'Unknown';
@@ -492,10 +489,11 @@ const test_upload = (callback, deviceId, cartridgeId) => {
                 return saveDocument(cartridge);
             })
             .then((response) => {
-                if (!response || !response.ok) {
+                if (!response || response.status > 202) {
                     throw new Error(`Cartridge ${cartridgeId} not saved`);
+                } else {
+                    send_response(callback, deviceId, 'test-upload', 'SUCCESS', cartridgeId);
                 }
-                send_response(callback, deviceId, 'test-upload', 'SUCCESS', cartridgeId);
             })
             .catch((error) => {
                 if (error.message) {
@@ -522,7 +520,15 @@ const write_log = (deviceId, event_type, status, data) => {
         data
     };
 
-	return saveDocument(log_entry);
+	saveDocument(log_entry)
+        .then((response) => {
+            if (!response || response.status > 202) {
+                throw new Error(`Log entry not saved`);
+            }
+        })
+        .catch((error) => {
+            console.log('Log entry save error', error)
+        });
 }
 
 const send_response = (callback, deviceId, event_type, status, data) => {
@@ -531,7 +537,7 @@ const send_response = (callback, deviceId, event_type, status, data) => {
     	"isBase64Encoded": false
     };
 
-	// write_log(deviceId, event_type, status, data);
+	write_log(deviceId, event_type, status, data);
     const responseData = typeof(data) === 'object' ? JSON.stringify(data) : data;
     response.body = `${event_type}${ITEM_DELIM}${status}${ITEM_DELIM}${responseData}${END_DELIM}`
 
