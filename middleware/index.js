@@ -1,35 +1,15 @@
-const PouchDB = require('pouchdb')
-
-const db = new PouchDB('https://brevitest-couchdb.com:6984/production', {
-    auth: {
-        username: 'admin',
-        password: 'f@nn!n.drn0'
-    }
-});
-
-    // const auth = {
-//     username: 'admin',
-//     password: 'f@nn!n.drn0'
-// };
-
-// const nano = require('nano')({
-//     url: `https://brevitest-couchdb.com:6984`
-    // requestDefaults: {
-    //     jar: true
-    // }
-// });
-
-// nano.auth(auth.username, auth.password)
-//     .then((context) => {
-//         console.log('couchdb auth context', context);
-//     })
-//     .catch((error) => {
-//         console.log('ERROR: couchdb auth context', error);
-//     })
-
-// const db = nano.db.use('production');
-
+const axios = require('axios')
 const Particle = require('particle-api-js');
+
+const auth = {
+    username: 'admin',
+    password: 'f@nn!n.Drn0'
+}
+const auth64 = Buffer.from(`${auth.username}:${auth.password}`).toString('base64') // YWRtaW46ZkBubiFuLkRybjA=
+console.log('auth64', auth64)
+
+axios.defaults.baseURL = 'https://brevitest-couchdb.com:6984';
+axios.defaults.headers.common['Authorization'] = `Basic ${auth64}`;
 
 const particle = new Particle();
 
@@ -55,15 +35,15 @@ const getVariable = (deviceId, token) => {
 }
 
 const saveDocument = (doc) => {
-	return db.put(doc);
+    return axios.put(`/production/${doc._id}`, { ...doc });
 }
 
 const getDocument = (docId) => {
-    return db.get(docId);
+    return axios.get(`/production/${docId}`, { include_docs: true });
 }
 
 const fetchDocuments = (keys) => {
-    return db.allDocs({ keys });
+    return axios.post(`/production/_all_docs`, keys, { include_docs: true });
 }
 
 const bcodeCommands = [{
@@ -286,14 +266,18 @@ const generateResponseString = (cartridgeId, code) => {
 const register_device = (callback, deviceId) => {
     console.log('register_device enter', deviceId);
     getDocument(deviceId)
-        .then ((device) => {
+        .then ((response) => {
+            if (response.status !== 200) {
+               throw new Error(`Device ${deviceId} load error - response = ${response}`);
+            }
+            const device = response.data;
             console.log('register_device getDocument', deviceId, device);
             device.lastActiveOn = new Date();
             return saveDocument(device);
         })
         .then((response) => {
             console.log('register_device saveDocument', deviceId, response);
-            if (!response || !response.ok) {
+            if (response.status !== 201) {
                throw new Error(`Device ${deviceId} not registered`);
             }
             send_response(callback, deviceId, 'register-device', 'SUCCESS', deviceId);

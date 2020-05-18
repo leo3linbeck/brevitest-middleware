@@ -13,8 +13,8 @@
   "author": "Leo Linbeck III",
   "license": "MIT",
   "dependencies": {
-    "particle-api-js": "^8.3.0",
-    "pouchdb": "^7.2.1"
+    "axios": "^0.19.2",
+    "particle-api-js": "^8.3.0"
   },
   "devDependencies": {},
   "repository": {
