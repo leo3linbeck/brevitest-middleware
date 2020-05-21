@@ -468,7 +468,7 @@ const test_upload = (callback, deviceId, cartridgeId) => {
                 return getDocument(cartridgeId);
             })
             .then ((response) => {
-                if (!response || response.status !== 200 || response.status !== 304) {
+                if (!response || !(response.status === 200 || response.status === 304)) {
                     throw new Error(`Cartridge ${cartridgeId} not found`);
                 }
 
