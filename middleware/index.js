@@ -582,7 +582,7 @@ exports.handler = (event, context, callback) => {
                         test_upload(callback, body.deviceId, body.data);
                         break;
                     case 'test-event':
-                        send_response(callback, body.event_type, 'SUCCESS', 'Test event received', body);
+                        send_response(callback, body.event_type, 'SUCCESS', 'Test event received', body.event_type);
                         break;
                     default:
                         send_response(callback, body.event_type, 'FAILURE', `Event not found:${body.event_type}`);
