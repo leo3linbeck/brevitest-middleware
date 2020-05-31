@@ -332,7 +332,7 @@ const xyzDiff = (r1, r2) => {
 }
 
 const magnitude = (v) => {
-    return Math.round(10000 * Math.sqrt(v.x * v.x + v.y * v.y + v.z * v.z)) * 0.1;
+    return Math.round(Math.round(10000 * Math.sqrt(v.x * v.x + v.y * v.y + v.z * v.z)) * 0.1);
 }
 
 const readoutValue = (baseline, final) => {
