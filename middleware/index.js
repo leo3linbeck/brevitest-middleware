@@ -438,15 +438,15 @@ const test_upload = (callback, deviceId, payload) => {
             if (!response || response.status > 202) {
                 throw new Error(`Cartridge ${result.cartridgeId} not saved`);
             } else {
-                send_response(callback, deviceId, 'test-upload', 'SUCCESS', result.cartridgeId);
+                send_response(callback, deviceId, 'upload-test', 'SUCCESS', result.cartridgeId);
             }
         })
         .catch((error) => {
             if (error.message) {
-                send_response(callback, deviceId, 'test-upload', 'FAILURE', error.message);
+                send_response(callback, deviceId, 'upload-test', 'FAILURE', error.message);
             } else {
                 error.cartridgeId = result.cartridgeId;
-                send_response(callback, deviceId, 'test-upload', 'ERROR', error);
+                send_response(callback, deviceId, 'upload-test', 'ERROR', error);
             }
         });
 }
@@ -514,7 +514,7 @@ exports.handler = (event, context, callback) => {
                     case 'validate-cartridge':
                         validate_cartridge(callback, body.deviceId, body.data);
                         break;
-                    case 'test-upload':
+                    case 'upload-test':
                         test_upload(callback, body.deviceId, body.data);
                         break;
                     case 'test-event':
