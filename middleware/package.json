@@ -13,8 +13,7 @@
   "author": "Leo Linbeck III",
   "license": "MIT",
   "dependencies": {
-    "axios": "^0.19.2",
-    "particle-api-js": "^8.3.0"
+    "axios": "^0.19.2"
   },
   "devDependencies": {},
   "repository": {

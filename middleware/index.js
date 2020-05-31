@@ -1,31 +1,13 @@
 const axios = require('axios')
-const Particle = require('particle-api-js');
 
 axios.defaults.baseURL = 'https://brevitest-couchdb.com:6984';
 axios.defaults.headers.common['Authorization'] = `Basic YWRtaW46ZkBubiFuLkRybjA=`;
-
-const particle = new Particle();
 
 const ARG_DELIM = ',';
 const ATTR_DELIM = ':';
 const ITEM_DELIM = '|';
 const END_DELIM = "#";
 // const DELIMS = [ ARG_DELIM, ATTR_DELIM, ITEM_DELIM, END_DELIM ]
-
-const login = () => {
-	return particle.login({
-		username: 'particle@brevitest.com',
-		password: 'FbM-c9p-SGJ-LN8'
-	});
-}
-
-const getVariable = (deviceId, token) => {
-	return particle.getVariable({
-		deviceId: deviceId,
-		name: 'register',
-		auth: token
-	});
-}
 
 const saveDocument = (doc) => {
     return axios.put(`/production/${doc._id}`, { ...doc });
@@ -257,7 +239,7 @@ const generateResponseString = (cartridgeId, code) => {
 }
 
 const register_device = (callback, deviceId) => {
-    console.log('register_device enter', deviceId);
+    // console.log('register_device enter', deviceId);
     getDocument(deviceId)
         .then ((response) => {
             if (response.status !== 200 && response.status !== 304) {
@@ -291,19 +273,20 @@ const validate_cartridge = (callback, deviceId, cartridgeId) => {
     } else {
         let code = null;
         const assayId = cartridgeId.slice(0, 8);
-        console.log(deviceId, assayId, cartridgeId)
+        // console.log(deviceId, assayId, cartridgeId)
         fetchDocuments([deviceId, assayId, cartridgeId])
             .then((response) => {
                 if (!response || response.status !== 200 || !response.data.rows || (response.data.rows.length !== 3)) {
                     throw new Error(`Could not find device ${deviceId}, assay ${assayId}, or cartridge ${cartridgeId}`);
                 }
                 const rows = response.data.rows;
-                console.log(rows[0].value);
                 const device = rows[0].doc;
                 const assay = rows[1].doc;
                 const cartridge = rows[2].doc;
 
-                if (cartridge.used) {
+                if (!cartridge) {
+                    throw new Error(`Cartridge ${cartridgeId} missing, may be deleted`);
+                } else if (cartridge.used) {
                     throw new Error(`Cartridge ${cartridgeId} already used`);
                 } else if (cartridge.status !== 'linked') {
                     throw new Error(`Cartridge ${cartridgeId} is not linked to a sample`);
@@ -341,41 +324,36 @@ const validate_cartridge = (callback, deviceId, cartridgeId) => {
     }
 }
 
-const test_status_update = (callback, deviceId, cartridgeId, event_type, new_status) => {
-	if (!deviceId) {
-        send_response(callback, deviceId, event_type, `FAILURE', 'Device ID missing`);
-    } else if (!cartridgeId) {
-        send_response(callback, deviceId, event_type, `FAILURE', 'Cartridge ID missing`);
-    } else {
-        getDocument(cartridgeId)
-        .then ((response) => {
-            if (response.status !== 200 && response.status !== 304) {
-                throw new Error(`Cartridge ${cartridgeId} not found`);
-            }
-            const cartridge = response.data;
-            console.log('cartridge', cartridge);
-            cartridge.status = new_status;
-            if (new_status === 'pending' || new_status === 'cancelled') {
-                cartridge.testFinishedOn = new Date();
-            }
-            return saveDocument(cartridge);
-        })
-        .then((response) => {
-            if (response.status === 201 || response.status === 202) {
-                send_response(callback, deviceId, event_type, 'SUCCESS', cartridgeId);
-            } else {
-                throw new Error(`Cartridge ${cartridgeId} could not be saved in the database`);
-            }
-        })
-        .catch((error) => {
-            if (error.message) {
-                send_response(callback, deviceId, event_type, 'FAILURE', error.message.slice(8));
-            } else {
-                error.cartridgeId = cartridgeId;
-                send_response(callback, deviceId, event_type, 'ERROR', error);
-            }
-        });
+const square = a => a * a;
+// const mean = a.length ? a.reduce((sum, elem) => (sum + elem), 0) / a.length : NaN;
+
+const xyzDiff = (r1, r2) => {
+	return Math.sqrt(square(r1.x - r2.x) + square(r1.y - r2.y) + square(r1.z - r2.z));
+}
+
+const magnitude = (v) => {
+    return Math.round(10000 * Math.sqrt(v.x * v.x + v.y * v.y + v.z * v.z)) * 0.1;
+}
+
+const readoutValue = (baseline, final) => {
+    const ratio = {
+        x: final.x ? baseline.x / final.x : 0,
+        y: final.y ? baseline.y / final.y : 0,
+        z: final.z ? baseline.z / final.z : 0        
     }
+    return magnitude(ratio);
+}
+
+const avgReadings = (readings, indexes) => {
+    const count = indexes.length;
+    const sum = indexes.reduce((total, index) => {
+        return {
+            x: total.x + readings[index].x,
+            y: total.y + readings[index].y,
+            z: total.z + readings[index].z
+        }
+    }, { x: 0, y: 0, z: 0 });
+    return { x: sum.x / count, y: sum.y / count, z: sum.z / count }
 }
 
 const parseReading = (reading) => {
@@ -394,47 +372,10 @@ return {
 	};
 }
 
-const parseData = (str) => {
-    const lines = str.split(ITEM_DELIM);
-    if (lines[1] === 'A') {
-        const readings = lines[2].split(ATTR_DELIM).map(reading => parseReading(reading));
-        return {
-            cartridgeId: lines[0],
-            numberOfReadings: readings.length,
-            readings
-        }
-    } else {
-        return {
-            cartridgeId: lines[0],
-            numberOfReadings: 0,
-            readings: []
-        }
-    }
-}
-
-const square = a => a * a;
-// const mean = a.length ? a.reduce((sum, elem) => (sum + elem), 0) / a.length : NaN;
-
-const xyzDiff = (r1, r2) => {
-	return Math.sqrt(square(r1.x - r2.x) + square(r1.y - r2.y) + square(r1.z - r2.z));
-}
-
-const readoutValue = (channel, readings) => {
-    if (channel === 'A') {
-        return Math.round(readings[0].L - (readings[9].L + readings[6].L) * 0.5);
-    } else if (channel === '1') {
-        return Math.round(readings[1].L - (readings[10].L + readings[7].L) * 0.5);
-    } else if (channel === '2') {
-        return Math.round(readings[2].L - (readings[11].L + readings[8].L) * 0.5);
-    } else {
-        return 0;
-    }
-}
-
 const calculateReadouts = (readings) => {
-    const sample = readoutValue('A', readings);
-    const control1 = readoutValue('1', readings);
-    const control2 = readoutValue('2', readings);
+    const sample = readoutValue(avgReadings(readings, [0, 3]), avgReadings(readings, [6, 9, 12]));
+    const control1 = readoutValue(avgReadings(readings, [1, 4]), avgReadings(readings, [7, 10, 13]));
+    const control2 = readoutValue(avgReadings(readings, [2, 5]), avgReadings(readings, [8, 11, 14]));
 	return {
         sample,
         control1,
@@ -442,37 +383,42 @@ const calculateReadouts = (readings) => {
     }
 };
 
-const test_upload = (callback, deviceId, cartridgeId) => {
-    let result = null;
+const parseData = (payload) => {
+    if (payload[1] === 'A' || payload[1] === 'B') {
+        const readings = payload[2].split(ATTR_DELIM).map(reading => parseReading(reading));
+        return {
+            cartridgeId: payload[0],
+            numberOfReadings: readings.length,
+            readings
+        }
+    } else {
+        return {
+            cartridgeId: payload[0],
+            numberOfReadings: 0,
+            readings: []
+        }
+    }
+}
 
-	if (!deviceId) {
-		send_response(callback, deviceId, 'test-upload', 'FAILURE', 'No device id');
-	} else if (!cartridgeId) {
-		send_response(callback, cartridgeId, 'test-upload', 'FAILURE', 'No cartridge id');
-	} else {
-		login(deviceId)
-            .then((response) => {
-                const token = response.body.access_token;
-                return getVariable(deviceId, token);
-            })
-            .then((response) => {
-                if (!response || !response.body || !response.body.result) {
-                    throw new Error(`FAILURE: Unable to get test for cartridge ${cartridgeId} from device ${deviceId}`);
-                }
-                result = parseData(response.body.result);
+const test_upload = (callback, deviceId, payload) => {
+    const result = parseData(payload);
 
-                if (result.cartridgeId !== cartridgeId) {
-                    throw new Error(`FAILURE: Cartridge ID ${cartridgeId} in device ${deviceId} does not match Cartridge ID uploaded`);
-                }
+    if (!result.cartridgeId) {
+        throw new Error(`FAILURE: Cartridge ID uploaded in device ${deviceId} is missing.`);
+    }
 
-                return getDocument(cartridgeId);
-            })
-            .then ((response) => {
-                if (!response || !(response.status === 200 || response.status === 304)) {
-                    throw new Error(`Cartridge ${cartridgeId} not found`);
-                }
+    getDocument(result.cartridgeId)
+        .then ((response) => {
+            if (!response || !(response.status === 200 || response.status === 304)) {
+                throw new Error(`Cartridge ${result.cartridgeId} not found`);
+            }
 
-                const cartridge = response.data;
+            const cartridge = response.data;
+            cartridge.testFinishedOn = new Date();
+            if (result.numberOfReadings === 0) {
+                cartridge.status = 'cancelled';
+            } else {
+                cartridge.status = 'completed'
                 cartridge.rawData = result;
                 cartridge.readouts = (result && result.readings && result.readings.length === 15) ? calculateReadouts(result.readings) : {};
                 
@@ -485,25 +431,24 @@ const test_upload = (callback, deviceId, cartridgeId) => {
                 } else {
                     cartridge.result = 'Negative';
                 }
-                cartridge.status = 'completed';
-                return saveDocument(cartridge);
-            })
-            .then((response) => {
-                if (!response || response.status > 202) {
-                    throw new Error(`Cartridge ${cartridgeId} not saved`);
-                } else {
-                    send_response(callback, deviceId, 'test-upload', 'SUCCESS', cartridgeId);
-                }
-            })
-            .catch((error) => {
-                if (error.message) {
-                    send_response(callback, deviceId, 'test-upload', 'FAILURE', error.message);
-                } else {
-                    error.cartridgeId = cartridgeId;
-                    send_response(callback, deviceId, 'test-upload', 'ERROR', error);
-                }
-            });
-	}
+            }
+            return saveDocument(cartridge);
+        })
+        .then((response) => {
+            if (!response || response.status > 202) {
+                throw new Error(`Cartridge ${result.cartridgeId} not saved`);
+            } else {
+                send_response(callback, deviceId, 'test-upload', 'SUCCESS', result.cartridgeId);
+            }
+        })
+        .catch((error) => {
+            if (error.message) {
+                send_response(callback, deviceId, 'test-upload', 'FAILURE', error.message);
+            } else {
+                error.cartridgeId = result.cartridgeId;
+                send_response(callback, deviceId, 'test-upload', 'ERROR', error);
+            }
+        });
 }
 
 const write_log = (deviceId, event_type, status, data) => {
@@ -527,7 +472,7 @@ const write_log = (deviceId, event_type, status, data) => {
             }
         })
         .catch((error) => {
-            console.log('Log entry save error', error)
+            console.error('Log entry save error', error)
         });
 }
 
@@ -546,37 +491,28 @@ const send_response = (callback, deviceId, event_type, status, data) => {
 
 const parseEvent = (event) => {
     const payload = event.queryStringParameters.data.split(ITEM_DELIM);
-
     return {
         event_name: event.queryStringParameters.event,
         event_type: payload[0],
         deviceId: event.queryStringParameters.coreid,
-        data: payload[1]
+        data: payload.length === 2 ? payload[1] : payload.slice(1)
     }
 }
 
 exports.handler = (event, context, callback) => {
-    console.log('starting', event);
+    // console.log('starting', event);
 	if (event) {
 		if (event.queryStringParameters) {
             const body = parseEvent(event);
-            console.log('body', body);
             if (body.event_name !== 'brevitest-production') {
                 send_response(callback, body.deviceId || 'unknown', 'unknown', 'ERROR', 'Brevitest unknown event');
             } else {
                 switch (body.event_type) {
                     case 'register-device':
-                        console.log('register_device');
                         register_device(callback, body.deviceId);
                         break;
                     case 'validate-cartridge':
                         validate_cartridge(callback, body.deviceId, body.data);
-                        break;
-                    case 'test-finish':
-                        test_status_update(callback, body.deviceId, body.data, body.event_type, 'pending');
-                        break;
-                    case 'test-cancel':
-                        test_status_update(callback, body.deviceId, body.data, body.event_type, 'cancelled');
                         break;
                     case 'test-upload':
                         test_upload(callback, body.deviceId, body.data);
