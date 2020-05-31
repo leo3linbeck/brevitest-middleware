@@ -385,18 +385,18 @@ const calculateReadouts = (readings) => {
 
 const parseData = (payload) => {
     if (payload[1] === 'A' || payload[1] === 'B') {
-        const readings = payload[2].split(ATTR_DELIM).map(reading => parseReading(reading));
-        return {
-            cartridgeId: payload[0],
-            numberOfReadings: readings.length,
-            readings
+        if (payload[2] === '0') { // test cancelled
+            return { cartridgeId: payload[0], numberOfReadings: 0, readings: [] }
+        } else {
+            const readings = payload[2].split(ATTR_DELIM).map(reading => parseReading(reading));
+            return {
+                cartridgeId: payload[0],
+                numberOfReadings: readings.length,
+                readings
+            }
         }
     } else {
-        return {
-            cartridgeId: payload[0],
-            numberOfReadings: 0,
-            readings: []
-        }
+        return { cartridgeId: payload[0], numberOfReadings: 0, readings: [] }
     }
 }
 
