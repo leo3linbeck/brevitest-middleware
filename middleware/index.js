@@ -17,8 +17,44 @@ const getDocument = (docId) => {
     return axios.get(`/production/${docId}`, { include_docs: true });
 }
 
-const fetchDocuments = (keys) => {
-    return axios.post(`/production/_all_docs`, { keys },  { params: { include_docs: true } });
+const getCartridgeWithBarcode = (barcode) => {
+    const params = { include_docs: true, key: `"${barcode}"` };
+    console.log('barcode', barcode, 'params', params);
+    return axios
+        .get(`/production/_design/cartridges/_view/barcode`, { params })
+        .then((response) => {
+            // console.log('getCartridgeWithBarcode', response)
+            if (
+                !response ||
+                response.status !== 200 ||
+                !response.data ||
+                !response.data.rows ||
+                response.data.rows.length !== 1
+            ) {
+                throw new Error(`List status = ${response && response.status}`);
+            }
+            return  response.data.rows[0].doc;
+        })
+}
+
+const getDeviceAndAssay = (keys) => {
+    return axios
+        .post(`/production/_all_docs`, { keys },  { params: { include_docs: true } })
+        .then((response) => {
+            console.log('getDeviceAndAssay', response)
+            if (
+                !response ||
+                response.status !== 200 ||
+                !response.data ||
+                !response.data.rows ||
+                response.data.rows.length !== 2
+            ) {
+                throw new Error(`Could not find device ${deviceId}, assay ${assayId}, or cartridge ${cartridgeId}`);
+            }
+            const device = response.data.rows[0].doc;
+            const assay = response.data.rows[1].doc;
+            return { device, assay }
+        })
 }
 
 const bcodeCommands = [{
@@ -265,40 +301,38 @@ const register_device = (callback, deviceId) => {
         });
 }
 
-const validate_cartridge = (callback, deviceId, cartridgeId) => {
-	if (!cartridgeId) {
-        send_response(callback, deviceId, 'validate-cartridge', 'FAILURE', `Cartridge ID missing`);
+const validate_cartridge = (callback, deviceId, barcode) => {
+	if (!barcode) {
+        send_response(callback, deviceId, 'validate-cartridge', 'FAILURE', `Barcode missing`);
     } else if (!deviceId) {
         send_response(callback, deviceId, 'validate-cartridge', 'FAILURE', `Device ID missing`);
     } else {
         let code = null;
-        const assayId = cartridgeId.slice(0, 8);
+        let cartridge = null;
         // console.log(deviceId, assayId, cartridgeId)
-        fetchDocuments([deviceId, assayId, cartridgeId])
-            .then((response) => {
-                if (!response || response.status !== 200 || !response.data.rows || (response.data.rows.length !== 3)) {
-                    throw new Error(`Could not find device ${deviceId}, assay ${assayId}, or cartridge ${cartridgeId}`);
-                }
-                const rows = response.data.rows;
-                const device = rows[0].doc;
-                const assay = rows[1].doc;
-                const cartridge = rows[2].doc;
-
+        getCartridgeWithBarcode(barcode)
+            .then((c) => {
+                cartridge = c;
+                console.log('cartridge', cartridge);
                 if (!cartridge) {
-                    throw new Error(`Cartridge ${cartridgeId} missing, may be deleted`);
+                    throw new Error(`Cartridge ${cartridge._id} missing, may be deleted`);
                 } else if (cartridge.used) {
-                    throw new Error(`Cartridge ${cartridgeId} already used`);
+                    throw new Error(`Cartridge ${cartridge._id} already used`);
                 } else if (cartridge.status !== 'linked') {
-                    throw new Error(`Cartridge ${cartridgeId} is not linked to a sample`);
+                    throw new Error(`Cartridge ${cartridge._id} is not linked to a sample`);
                 } else if (!cartridge.orderId) {
-                    throw new Error(`Cartridge ${cartridgeId} is missing an order number`);
+                    throw new Error(`Cartridge ${cartridge._id} is missing an order number`);
                 } else if (!cartridge.customerId) {
-                    throw new Error(`Cartridge ${cartridgeId} is not assigned to a customer`);
-                } else if (cartridge.customerId !== device.customerId) {
+                    throw new Error(`Cartridge ${cartridge._id} is not assigned to a customer`);
+                }
+                const assayId = cartridge._id.slice(0, 8);
+                return getDeviceAndAssay([deviceId, assayId]);
+            })
+            .then(({ device, assay}) => {
+                if (cartridge.customerId !== device.customerId) {
                     throw new Error(`Cartridge customer ${cartridge.customerId} does not match device customer ${device.customerId}`);
                 }
-
-                code = assay.BCODE.code
+                code = assay.BCODE.code;
                 cartridge.device = device;
                 cartridge.assay = assay;
                 cartridge.status = 'underway';
@@ -308,10 +342,10 @@ const validate_cartridge = (callback, deviceId, cartridgeId) => {
             })
             .then((response) => {
                 if (response.status === 201 || response.status === 202) {
-                    const responseString = generateResponseString(cartridgeId, code);
+                    const responseString = generateResponseString(cartridge._id, code);
                     send_response(callback, deviceId, 'validate-cartridge', 'SUCCESS', responseString);
                 } else {
-                    throw new Error(`Cartridge ${cartridgeId} could not be saved in the database`);
+                    throw new Error(`Cartridge ${cartridge._id} could not be saved in the database`);
                 }
             })
             .catch((error) => {
@@ -322,38 +356,6 @@ const validate_cartridge = (callback, deviceId, cartridgeId) => {
                 }
             });
     }
-}
-
-const square = a => a * a;
-// const mean = a.length ? a.reduce((sum, elem) => (sum + elem), 0) / a.length : NaN;
-
-const xyzDiff = (r1, r2) => {
-	return Math.sqrt(square(r1.x - r2.x) + square(r1.y - r2.y) + square(r1.z - r2.z));
-}
-
-const magnitude = (v) => {
-    return Math.round(Math.round(10000 * Math.sqrt(v.x * v.x + v.y * v.y + v.z * v.z)) * 0.1);
-}
-
-const readoutValue = (baseline, final) => {
-    const ratio = {
-        x: final.x ? baseline.x / final.x : 0,
-        y: final.y ? baseline.y / final.y : 0,
-        z: final.z ? baseline.z / final.z : 0        
-    }
-    return magnitude(ratio);
-}
-
-const avgReadings = (readings, indexes) => {
-    const count = indexes.length;
-    const sum = indexes.reduce((total, index) => {
-        return {
-            x: total.x + readings[index].x,
-            y: total.y + readings[index].y,
-            z: total.z + readings[index].z
-        }
-    }, { x: 0, y: 0, z: 0 });
-    return { x: sum.x / count, y: sum.y / count, z: sum.z / count }
 }
 
 const parseReading = (reading) => {
@@ -372,17 +374,6 @@ return {
 	};
 }
 
-const calculateReadouts = (readings) => {
-    const sample = readoutValue(avgReadings(readings, [0, 3]), avgReadings(readings, [6, 9, 12]));
-    const control1 = readoutValue(avgReadings(readings, [1, 4]), avgReadings(readings, [7, 10, 13]));
-    const control2 = readoutValue(avgReadings(readings, [2, 5]), avgReadings(readings, [8, 11, 14]));
-	return {
-        sample,
-        control1,
-        control2
-    }
-};
-
 const parseData = (payload) => {
     if (payload[1] === 'A' || payload[1] === 'B') {
         if (payload[2] === '0') { // test cancelled
@@ -397,6 +388,65 @@ const parseData = (payload) => {
         }
     } else {
         return { cartridgeId: payload[0], numberOfReadings: 0, readings: [] }
+    }
+}
+
+const sqrt3 = Math.sqrt(3)
+
+const magnitude = (v) => {
+    return Math.round((1000 * Math.sqrt(v.x * v.x + v.y * v.y + v.z * v.z)) / sqrt3)
+}
+
+const readoutValue = (baseline, final) => {
+    const ratio = {
+        x: final.x ? baseline.x / final.x : 0,
+        y: final.y ? baseline.y / final.y : 0,
+        z: final.z ? baseline.z / final.z : 0
+    }
+    return magnitude(ratio)
+}
+
+const avgReadings = (readings, indexes) => {
+    const count = indexes.length
+    const sum = indexes.reduce(
+        (total, index) => {
+            return {
+                x: total.x + readings[index].x,
+                y: total.y + readings[index].y,
+                z: total.z + readings[index].z
+            }
+        },
+        { x: 0, y: 0, z: 0 }
+    )
+    return { x: sum.x / count, y: sum.y / count, z: sum.z / count }
+}
+
+const calculateReadouts = (readings) => {
+    const sample = readoutValue(avgReadings(readings, [0, 3]), avgReadings(readings, [6, 9, 12]))
+    const control1 = readoutValue(avgReadings(readings, [1, 4]), avgReadings(readings, [7, 10, 13]))
+    const control2 = readoutValue(avgReadings(readings, [2, 5]), avgReadings(readings, [8, 11, 14]))
+    const control0 = control1 > control2 ? control2 : control1
+    const control20 = control1 > control2 ? control1 : control2
+    const concentration =
+        control20 - control0 >= 10
+            ? Number.parseFloat(((20 * (sample - control0)) / (control20 - control0)).toFixed(1))
+            : null
+    return { sample, control0, control20, concentration }
+}
+
+const calculateResult = (concentration, cutScores) => {
+    if (!cutScores) {
+        return 'Unknown'
+    } else if (concentration === null) {
+        return 'Failure'
+    } else if (typeof concentration !== 'number') {
+        return 'Error'
+    } else if (concentration > cutScores.redMax || concentration < cutScores.redMin) {
+        return 'Positive'
+    } else if (concentration > cutScores.greenMax || concentration < cutScores.greenMin) {
+        return 'Borderline'
+    } else {
+        return 'Negative'
     }
 }
 
@@ -420,16 +470,16 @@ const test_upload = (callback, deviceId, payload) => {
             } else {
                 cartridge.status = 'completed'
                 cartridge.rawData = result;
-                cartridge.readouts = (result && result.readings && result.readings.length === 15) ? calculateReadouts(result.readings) : {};
-                
-                if (typeof cartridge.readouts.sample !== 'number') {
-                    cartridge.result = 'Unknown';
-                } else if (cartridge.readouts.sample > cartridge.assay.standardCurve.cutScores.redMax || cartridge.readouts.sample < cartridge.assay.standardCurve.cutScores.redMin) {
-                    cartridge.result = 'Positive';
-                } else if (cartridge.readouts.sample > cartridge.assay.standardCurve.cutScores.greenMax || cartridge.readouts.sample < cartridge.assay.standardCurve.cutScores.greenMin) {
-                    cartridge.result = 'Borderline';
+                if (result && result.readings && result.readings.length === 15) {
+                    cartridge.readouts = calculateReadouts(result.readings);
+                    if (cartridge.assay && cartridge.assay.standardCurve) {
+                        cartridge.result = calculateResult(cartridge.readouts.concentration, cartridge.assay.standardCurve.cutScores);
+                    } else {
+                        cartridge.result = null;
+                    }
                 } else {
-                    cartridge.result = 'Negative';
+                    cartridge.readouts = {};
+                    cartridge.result = null;
                 }
             }
             return saveDocument(cartridge);
