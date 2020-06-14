@@ -393,8 +393,12 @@ const parseData = (payload) => {
 
 const sqrt3 = Math.sqrt(3)
 
+const hypotenuse = (v) => {
+    return Math.sqrt(v.x * v.x + v.y * v.y + v.z * v.z)
+}
+
 const magnitude = (v) => {
-    return Math.round((1000 * Math.sqrt(v.x * v.x + v.y * v.y + v.z * v.z)) / sqrt3)
+    return Math.round((1000 * hypotenuse(v)) / sqrt3)
 }
 
 const readoutValue = (baseline, final) => {
@@ -421,24 +425,70 @@ const avgReadings = (readings, indexes) => {
     return { x: sum.x / count, y: sum.y / count, z: sum.z / count }
 }
 
-const calculateReadouts = (readings) => {
+const L_MAX = 6500
+const L_MIN = 4500
+const C_0_MAX = 1080
+const C_0_MIN = 920
+
+const validateAndCalculateConcentration = (readings, assay, sample, control0, controlHigh) => {
+    const inRange = readings.reduce((ok, reading, index) => {
+        if (index < 6 || reading.channel === '1') {
+            return ok && reading.L >= L_MIN && reading.L <= L_MAX
+        } else {
+            return ok
+        }
+    }, true)
+    if (!inRange) {
+        console.log('readings not in range', readings)
+        return null
+    }
+    if (control0 > C_0_MAX) {
+        console.log('control0 too high', control0)
+        return null
+    }
+    if (control0 < C_0_MIN) {
+        console.log('control0 too low', control0)
+        return null
+    }
+    if (controlHigh > assay.analysis.controlHigh.max) {
+        console.log('controlHigh too high', controlHigh)
+        return null
+    }
+    if (controlHigh < assay.analysis.controlHigh.min) {
+        console.log('controlHigh too low', controlHigh)
+        return null
+    }
+    const controlDelta = controlHigh - control0
+    if (controlDelta > assay.analysis.controlDelta.max) {
+        console.log('controlDelta too high', controlDelta)
+        return null
+    }
+    if (controlDelta < assay.analysis.controlDelta.min) {
+        console.log('controlDelta too low', controlDelta)
+        return null
+    }
+
+    return Number.parseFloat(
+        ((assay.analysis.controlHighConcentration * (sample - control0)) / controlDelta).toFixed(1)
+    )
+}
+
+const calculateReadouts = (readings, assay) => {
     const sample = readoutValue(avgReadings(readings, [0, 3]), avgReadings(readings, [6, 9, 12]))
     const control1 = readoutValue(avgReadings(readings, [1, 4]), avgReadings(readings, [7, 10, 13]))
     const control2 = readoutValue(avgReadings(readings, [2, 5]), avgReadings(readings, [8, 11, 14]))
     const control0 = control1 > control2 ? control2 : control1
-    const control20 = control1 > control2 ? control1 : control2
-    const concentration =
-        control20 - control0 >= 10
-            ? Number.parseFloat(((20 * (sample - control0)) / (control20 - control0)).toFixed(1))
-            : null
-    return { sample, control0, control20, concentration }
+    const controlHigh = control1 > control2 ? control1 : control2
+    const concentration = validateAndCalculateConcentration(readings, assay, sample, control0, controlHigh)
+    // console.log(sample, control0, controlHigh, concentration)
+    return { sample, control0, controlHigh, concentration }
 }
 
 const calculateResult = (concentration, cutScores) => {
     if (!cutScores) {
         return 'Unknown'
     } else if (concentration === null) {
-        return 'Failure'
+        return 'Invalid'
     } else if (typeof concentration !== 'number') {
         return 'Error'
     } else if (concentration > cutScores.redMax || concentration < cutScores.redMin) {
@@ -452,6 +502,7 @@ const calculateResult = (concentration, cutScores) => {
 
 const test_upload = (callback, deviceId, payload) => {
     const result = parseData(payload);
+    let invalid_test = false;
 
     if (!result.cartridgeId) {
         throw new Error(`FAILURE: Cartridge ID uploaded in device ${deviceId} is missing.`);
@@ -471,14 +522,17 @@ const test_upload = (callback, deviceId, payload) => {
                 cartridge.status = 'completed'
                 cartridge.rawData = result;
                 if (result && result.readings && result.readings.length === 15) {
-                    cartridge.readouts = calculateReadouts(result.readings);
-                    if (cartridge.assay && cartridge.assay.standardCurve) {
-                        cartridge.result = calculateResult(cartridge.readouts.concentration, cartridge.assay.standardCurve.cutScores);
+                    if (cartridge.assay && cartridge.assay.analysis) {
+                        cartridge.readouts = calculateReadouts(result.readings, cartridge.assay);
+                        cartridge.result = calculateResult(cartridge.readouts.concentration, cartridge.assay.analysis.cutScores);
+                        invalid_test = cartridge.readouts.concentration === null;
                     } else {
+                        cartridge.readouts = { sample: null, control0: null, controlHigh: null, concentration: null }
                         cartridge.result = null;
+                        invalid_test = true;
                     }
                 } else {
-                    cartridge.readouts = {};
+                    cartridge.readouts = { sample: null, control0: null, controlHigh: null, concentration: null }
                     cartridge.result = null;
                 }
             }
@@ -488,7 +542,11 @@ const test_upload = (callback, deviceId, payload) => {
             if (!response || response.status > 202) {
                 throw new Error(`Cartridge ${result.cartridgeId} not saved`);
             } else {
-                send_response(callback, deviceId, 'upload-test', 'SUCCESS', result.cartridgeId);
+                if (invalid_test) {
+                    send_response(callback, deviceId, 'upload-test', 'INVALID', result.cartridgeId);
+                } else {
+                    send_response(callback, deviceId, 'upload-test', 'SUCCESS', result.cartridgeId);
+                }
             }
         })
         .catch((error) => {
