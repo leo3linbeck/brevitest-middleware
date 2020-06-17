@@ -432,7 +432,7 @@ const C_0_MIN = 920
 
 const validateAndCalculateConcentration = (readings, assay, sample, control0, controlHigh) => {
     const inRange = readings.reduce((ok, reading, index) => {
-        if (index < 6 || reading.channel === '1') {
+        if (index < 6) {
             return ok && reading.L >= L_MIN && reading.L <= L_MAX
         } else {
             return ok
