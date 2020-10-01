@@ -425,7 +425,7 @@ const avgReadings = (readings, indexes) => {
     return { x: sum.x / count, y: sum.y / count, z: sum.z / count }
 }
 
-const L_MAX = 6500
+const L_MAX = 7500
 const L_MIN = 4500
 const C_0_MAX = 1080
 const C_0_MIN = 920
