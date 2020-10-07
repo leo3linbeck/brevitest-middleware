@@ -31,6 +31,7 @@ const getCartridgeWithBarcode = (barcode) => {
                 !response.data.rows ||
                 response.data.rows.length !== 1
             ) {
+                console.log(response)
                 throw new Error(`List status = ${response && response.status}`);
             }
             return  response.data.rows[0].doc;
@@ -322,15 +323,15 @@ const validate_cartridge = (callback, deviceId, barcode) => {
                     throw new Error(`Cartridge ${cartridge._id} is not linked to a sample`);
                 } else if (!cartridge.orderId) {
                     throw new Error(`Cartridge ${cartridge._id} is missing an order number`);
-                } else if (!cartridge.customerId) {
-                    throw new Error(`Cartridge ${cartridge._id} is not assigned to a customer`);
+                } else if (!cartridge.siteId) {
+                    throw new Error(`Cartridge ${cartridge._id} is not assigned to a site`);
                 }
                 const assayId = cartridge._id.slice(0, 8);
                 return getDeviceAndAssay([deviceId, assayId]);
             })
             .then(({ device, assay}) => {
-                if (cartridge.customerId !== device.customerId) {
-                    throw new Error(`Cartridge customer ${cartridge.customerId} does not match device customer ${device.customerId}`);
+                if (cartridge.siteId !== device.siteId) {
+                    throw new Error(`Cartridge site ${cartridge.siteId} does not match device site ${device.siteId}`);
                 }
                 code = assay.BCODE.code;
                 cartridge.device = device;
@@ -432,7 +433,7 @@ const C_0_MIN = 920
 
 const validateAndCalculateConcentration = (readings, assay, sample, control0, controlHigh) => {
     const inRange = readings.reduce((ok, reading, index) => {
-        if (index < 6) {
+        if (index < 6 ) {
             return ok && reading.L >= L_MIN && reading.L <= L_MAX
         } else {
             return ok
