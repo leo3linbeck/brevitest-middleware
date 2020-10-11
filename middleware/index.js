@@ -1,7 +1,7 @@
 const axios = require('axios')
 
-axios.defaults.baseURL = 'https://brevitest-couchdb.com:6984';
-axios.defaults.headers.common['Authorization'] = `Basic YWRtaW46ZkBubiFuLkRybjA=`;
+axios.defaults.baseURL = process.env.COUCHDB_URL;
+axios.defaults.headers.common['Authorization'] = process.env.COUCHDB_BASE64_AUTH;
 
 const ARG_DELIM = ',';
 const ATTR_DELIM = ':';
@@ -9,52 +9,59 @@ const ITEM_DELIM = '|';
 const END_DELIM = "#";
 // const DELIMS = [ ARG_DELIM, ATTR_DELIM, ITEM_DELIM, END_DELIM ]
 
+const getStatus = (status) => status === 200 || status === 304
+const putStatus = (status) => status === 201 || status === 202
+const postStatus = (status) => status === 200 || status === 201
+
 const saveDocument = (doc) => {
-    return axios.put(`/production/${doc._id}`, { ...doc });
+    const config = {
+        validateStatus: putStatus
+    }
+    return axios.put(`/${doc._id}`, { ...doc }, config);
 }
 
 const getDocument = (docId) => {
-    return axios.get(`/production/${docId}`, { include_docs: true });
+    const config = {
+        params: { include_docs: true },
+        validateStatus: getStatus
+    }
+    return axios.get(`/${docId}`, config);
 }
 
 const getCartridgeWithBarcode = (barcode) => {
-    const params = { include_docs: true, key: `"${barcode}"` };
-    console.log('barcode', barcode, 'params', params);
+    const config = {
+        params: { include_docs: true, key: `"${barcode}"` },
+        validateStatus: getStatus
+    }
     return axios
-        .get(`/production/_design/cartridges/_view/barcode`, { params })
+        .get(`/_design/cartridges/_view/barcode`, config)
         .then((response) => {
-            // console.log('getCartridgeWithBarcode', response)
-            if (
-                !response ||
-                response.status !== 200 ||
-                !response.data ||
-                !response.data.rows ||
-                response.data.rows.length !== 1
-            ) {
-                console.log(response)
-                throw new Error(`List status = ${response && response.status}`);
+            const rows = response.data.rows
+            if (!rows) {
+                throw new Error(`Missing data for barcode ${barcode}`);
+            } else if (rows.length === 0) {
+                throw new Error(`Barcode ${barcode} not found in database`);
+            } else if (rows.length > 1) {
+                throw new Error(`${rows.length} records for ${barcode} found - only 1 allowed`);
             }
-            return  response.data.rows[0].doc;
+            return  rows[0].doc;
         })
 }
 
-const getDeviceAndAssay = (keys) => {
+const getMultipleDocuments = (keys) => {
+    const config = {
+        params: { include_docs: true },
+        validateStatus: postStatus
+    }
     return axios
-        .post(`/production/_all_docs`, { keys },  { params: { include_docs: true } })
+        .post(`/_all_docs`, { keys },  config)
         .then((response) => {
-            console.log('getDeviceAndAssay', response)
-            if (
-                !response ||
-                response.status !== 200 ||
-                !response.data ||
-                !response.data.rows ||
-                response.data.rows.length !== 2
-            ) {
-                throw new Error(`Could not find device ${deviceId}, assay ${assayId}, or cartridge ${cartridgeId}`);
+            const rows = response.data.rows
+            if (rows.length !== keys.length) {
+                const rowKeys = rows.map((row) => row.key)
+                throw new Error(`Document mismatch: searched for (${keys.join(',')}) and found (${rowKeys.join(',')})`);
             }
-            const device = response.data.rows[0].doc;
-            const assay = response.data.rows[1].doc;
-            return { device, assay }
+            return rows.map((row) => row.doc)
         })
 }
 
@@ -275,31 +282,31 @@ const generateResponseString = (cartridgeId, code) => {
     return result.join(ITEM_DELIM);
 }
 
-const register_device = (callback, deviceId) => {
-    // console.log('register_device enter', deviceId);
-    getDocument(deviceId)
-        .then ((response) => {
-            if (response.status !== 200 && response.status !== 304) {
-               throw new Error(`Device ${deviceId} load error - response = ${response}`);
-            }
-            const device = response.data;
-            device.lastActiveOn = new Date();
-            return saveDocument(device);
-        })
-        .then((response) => {
-            if (response.status === 201 || response.status === 202) {
-                send_response(callback, deviceId, 'register-device', 'SUCCESS', deviceId);
-            } else {
-                throw new Error(`Device ${deviceId} not registered`);
-            }
-        })
-        .catch((error) => {
-            if (error.message) {
-                send_response(callback, deviceId, 'register-device', 'FAILURE', error.message);
-            } else {
-                send_response(callback, deviceId, 'register-device', 'ERROR', deviceId);
-            }
-        });
+const verify_device = (callback, coreId, deviceId) => {
+    if (coreId !== deviceId) {
+        send_response(callback, deviceId, 'verify-device', 'FAILURE', `Device ID mismatch (${coreId} vs. ${deviceId})`);
+    } else {
+        getDocument(deviceId)
+            .then ((response) => {
+                const device = response.data;
+                if (!device.verified) {
+                    send_response(callback, deviceId, 'verify-device', 'FAILURE', 'Device not verified');
+                } else {
+                    device.lastActiveOn = device.lastVerifiedOn = new Date();
+                    return saveDocument(device);    
+                }
+            })
+            .then(() => {
+                send_response(callback, deviceId, 'verify-device', 'SUCCESS', deviceId);
+            })
+            .catch((error) => {
+                if (error.message) {
+                    send_response(callback, deviceId, 'verify-device', 'FAILURE', error.message);
+                } else {
+                    send_response(callback, deviceId, 'verify-device', 'ERROR', deviceId);
+                }
+            });
+    }
 }
 
 const validate_cartridge = (callback, deviceId, barcode) => {
@@ -308,46 +315,34 @@ const validate_cartridge = (callback, deviceId, barcode) => {
     } else if (!deviceId) {
         send_response(callback, deviceId, 'validate-cartridge', 'FAILURE', `Device ID missing`);
     } else {
-        let code = null;
         let cartridge = null;
-        // console.log(deviceId, assayId, cartridgeId)
         getCartridgeWithBarcode(barcode)
             .then((c) => {
                 cartridge = c;
-                console.log('cartridge', cartridge);
                 if (!cartridge) {
                     throw new Error(`Cartridge ${cartridge._id} missing, may be deleted`);
                 } else if (cartridge.used) {
                     throw new Error(`Cartridge ${cartridge._id} already used`);
                 } else if (cartridge.status !== 'linked') {
-                    throw new Error(`Cartridge ${cartridge._id} is not linked to a sample`);
+                    throw new Error(`Cartridge ${cartridge._id} is not linked to an order`);
+                // } else if (((new Date() -  new Date(cartridge.linkDate)) / 1000) > 1800) {
+                //     throw new Error(`Cartridge ${cartridge._id} cannot be used because it has been more than 30 minutes since it was linked`);
                 } else if (!cartridge.orderId) {
                     throw new Error(`Cartridge ${cartridge._id} is missing an order number`);
                 } else if (!cartridge.siteId) {
                     throw new Error(`Cartridge ${cartridge._id} is not assigned to a site`);
                 }
                 const assayId = cartridge._id.slice(0, 8);
-                return getDeviceAndAssay([deviceId, assayId]);
+                return getMultipleDocuments([deviceId, assayId]);
             })
-            .then(({ device, assay}) => {
+            .then(([device, assay]) => {
+                // const device = docs[0];
+                // const assay = docs[1];
                 if (cartridge.siteId !== device.siteId) {
                     throw new Error(`Cartridge site ${cartridge.siteId} does not match device site ${device.siteId}`);
                 }
-                code = assay.BCODE.code;
-                cartridge.device = device;
-                cartridge.assay = assay;
-                cartridge.status = 'underway';
-                cartridge.used = true;
-                cartridge.testStartedOn = new Date();
-                return saveDocument(cartridge);
-            })
-            .then((response) => {
-                if (response.status === 201 || response.status === 202) {
-                    const responseString = generateResponseString(cartridge._id, code);
-                    send_response(callback, deviceId, 'validate-cartridge', 'SUCCESS', responseString);
-                } else {
-                    throw new Error(`Cartridge ${cartridge._id} could not be saved in the database`);
-                }
+                const responseString = generateResponseString(cartridge._id, assay.BCODE.code);
+                send_response(callback, deviceId, 'validate-cartridge', 'SUCCESS', responseString);
             })
             .catch((error) => {
                 if (error.message) {
@@ -357,6 +352,34 @@ const validate_cartridge = (callback, deviceId, barcode) => {
                 }
             });
     }
+}
+
+const test_start = (callback, deviceId, cartridgeId) => {
+    if (!cartridgeId) {
+        throw new Error(`FAILURE: Cartridge ID is missing.`);
+    }
+
+    getMultipleDocuments([cartridgeId, cartridgeId.slice(0, 8), deviceId])
+        .then (([cartridge, assay, device]) => {
+            cartridge.device = device;
+            cartridge.assay = assay;
+            cartridge.assay.duration = parseInt(bcodeDuration(assay.BCODE.code) / 1000);
+            cartridge.status = 'underway';
+            cartridge.used = true;
+            cartridge.testStartedOn = new Date();
+            return saveDocument(cartridge);
+        })
+        .then((response) => {
+            send_response(callback, deviceId, 'start-test', 'SUCCESS', cartridgeId);
+        })
+        .catch((error) => {
+            if (error.message) {
+                send_response(callback, deviceId, 'start-test', 'FAILURE', error.message);
+            } else {
+                error.cartridgeId = cartridgeId;
+                send_response(callback, deviceId, 'start-test', 'ERROR', error);
+            }
+        });
 }
 
 const parseReading = (reading) => {
@@ -431,47 +454,36 @@ const L_MIN = 4500
 const C_0_MAX = 1080
 const C_0_MIN = 920
 
-const validateAndCalculateConcentration = (readings, assay, sample, control0, controlHigh) => {
-    const inRange = readings.reduce((ok, reading, index) => {
-        if (index < 6 ) {
-            return ok && reading.L >= L_MIN && reading.L <= L_MAX
-        } else {
-            return ok
+const validateReadings = (readings, readouts, assay) => {
+    const validation = [];
+    readings.slice(0, 6).forEach((reading, index) => {
+        if (reading.L < L_MIN) {
+            validation.push(`reading ${index} too low (${reading.L.toFixed(1)} < ${L_MIN})`)
+        } else if (reading.L > L_MAX) {
+            validation.push(`reading ${index} too high (${reading.L.toFixed(1)} > ${L_MAX.toFixed(1)})`)
         }
-    }, true)
-    if (!inRange) {
-        console.log('readings not in range', readings)
-        return null
+    })
+    if (readouts.control0 > C_0_MAX) {
+        validation.push(`control0 too high (${readouts.control0.toFixed(1)} > ${C_0_MAX.toFixed(1)})`)
     }
-    if (control0 > C_0_MAX) {
-        console.log('control0 too high', control0)
-        return null
+    if (readouts.control0 < C_0_MIN) {
+        validation.push(`control0 too low (${readouts.control0.toFixed(1)} < ${C_0_MIN.toFixed(1)})`)
     }
-    if (control0 < C_0_MIN) {
-        console.log('control0 too low', control0)
-        return null
+    if (readouts.controlHigh > assay.analysis.controlHigh.max) {
+        validation.push(`controlHigh too high (${readouts.controlHigh.toFixed(1)} > ${assay.analysis.controlHigh.max.toFixed(1)})`)
     }
-    if (controlHigh > assay.analysis.controlHigh.max) {
-        console.log('controlHigh too high', controlHigh)
-        return null
+    if (readouts.controlHigh < assay.analysis.controlHigh.min) {
+        validation.push(`controlHigh too low (${readouts.controlHigh.toFixed(1)} < ${assay.analysis.controlHigh.min.toFixed(1)})`)
     }
-    if (controlHigh < assay.analysis.controlHigh.min) {
-        console.log('controlHigh too low', controlHigh)
-        return null
-    }
-    const controlDelta = controlHigh - control0
+    const controlDelta = readouts.controlHigh - readouts.control0
     if (controlDelta > assay.analysis.controlDelta.max) {
-        console.log('controlDelta too high', controlDelta)
-        return null
+        validation.push(`(controlHigh - control0) too high (${controlDelta.toFixed(1)} > ${assay.analysis.controlDelta.max.toFixed(1)})`)
     }
     if (controlDelta < assay.analysis.controlDelta.min) {
-        console.log('controlDelta too low', controlDelta)
-        return null
+        validation.push(`(controlHigh - control0) too low (${controlDelta.toFixed(1)} < ${assay.analysis.controlDelta.min.toFixed(1)})`)
     }
 
-    return Number.parseFloat(
-        ((assay.analysis.controlHighConcentration * (sample - control0)) / controlDelta).toFixed(1)
-    )
+    return validation.length ? validation : false;
 }
 
 const calculateReadouts = (readings, assay) => {
@@ -480,15 +492,15 @@ const calculateReadouts = (readings, assay) => {
     const control2 = readoutValue(avgReadings(readings, [2, 5]), avgReadings(readings, [8, 11, 14]))
     const control0 = control1 > control2 ? control2 : control1
     const controlHigh = control1 > control2 ? control1 : control2
-    const concentration = validateAndCalculateConcentration(readings, assay, sample, control0, controlHigh)
+    const concentration = Number.parseFloat((assay.analysis.controlHighConcentration * (sample - control0) / (controlHigh - control0)).toFixed(1))
     // console.log(sample, control0, controlHigh, concentration)
     return { sample, control0, controlHigh, concentration }
 }
 
-const calculateResult = (concentration, cutScores) => {
+const calculateResult = (concentration, cutScores, invalid) => {
     if (!cutScores) {
         return 'Unknown'
-    } else if (concentration === null) {
+    } else if (invalid) {
         return 'Invalid'
     } else if (typeof concentration !== 'number') {
         return 'Error'
@@ -501,53 +513,53 @@ const calculateResult = (concentration, cutScores) => {
     }
 }
 
+const invalidResult = (cartridge, message) => {
+    cartridge.readouts = { sample: null, control0: null, controlHigh: null, concentration: null }
+    cartridge.validationErrors = [message];
+    cartridge.result = null;
+    return true
+}
+
 const test_upload = (callback, deviceId, payload) => {
     const result = parseData(payload);
-    let invalid_test = false;
-
     if (!result.cartridgeId) {
         throw new Error(`FAILURE: Cartridge ID uploaded in device ${deviceId} is missing.`);
     }
 
+    let invalid_test = false;
     getDocument(result.cartridgeId)
         .then ((response) => {
-            if (!response || !(response.status === 200 || response.status === 304)) {
-                throw new Error(`Cartridge ${result.cartridgeId} not found`);
-            }
-
             const cartridge = response.data;
             cartridge.testFinishedOn = new Date();
-            if (result.numberOfReadings === 0) {
-                cartridge.status = 'cancelled';
-            } else {
+            if (result.numberOfReadings) {
                 cartridge.status = 'completed'
                 cartridge.rawData = result;
-                if (result && result.readings && result.readings.length === 15) {
-                    if (cartridge.assay && cartridge.assay.analysis) {
-                        cartridge.readouts = calculateReadouts(result.readings, cartridge.assay);
-                        cartridge.result = calculateResult(cartridge.readouts.concentration, cartridge.assay.analysis.cutScores);
-                        invalid_test = cartridge.readouts.concentration === null;
-                    } else {
-                        cartridge.readouts = { sample: null, control0: null, controlHigh: null, concentration: null }
-                        cartridge.result = null;
-                        invalid_test = true;
-                    }
+                if (!result.readings) {
+                    invalid_test = invalidResult(cartridge,'No optical readings');
+                } else if (result.readings.length !== 15) {
+                    invalid_test = invalidResult(cartridge,`Wrong number of optical readings: 15 expected, ${result.readings.length} found`);
+                } else if (!cartridge.assay.analysis) {
+                    invalid_test = invalidResult(cartridge,'Missing analysis section of assay definition');
                 } else {
-                    cartridge.readouts = { sample: null, control0: null, controlHigh: null, concentration: null }
-                    cartridge.result = null;
+                    cartridge.readouts = calculateReadouts(result.readings, cartridge.assay);
+                    cartridge.validationErrors = validateReadings(result.readings, cartridge.readouts, cartridge.assay);
+                    invalid_test = !!cartridge.validationErrors;
+                    cartridge.result = calculateResult(cartridge.readouts.concentration, cartridge.assay.analysis.cutScores, invalid_test);
                 }
-            }
+            } else {
+                cartridge.status = 'cancelled';
+                cartridge.rawData = null;
+                cartridge.validationErrors = false;
+                cartridge.readouts = { sample: null, control0: null, controlHigh: null, concentration: null }
+                cartridge.result = null;
+                }
             return saveDocument(cartridge);
         })
         .then((response) => {
-            if (!response || response.status > 202) {
-                throw new Error(`Cartridge ${result.cartridgeId} not saved`);
+            if (invalid_test) {
+                send_response(callback, deviceId, 'upload-test', 'INVALID', result.cartridgeId);
             } else {
-                if (invalid_test) {
-                    send_response(callback, deviceId, 'upload-test', 'INVALID', result.cartridgeId);
-                } else {
-                    send_response(callback, deviceId, 'upload-test', 'SUCCESS', result.cartridgeId);
-                }
+                send_response(callback, deviceId, 'upload-test', 'SUCCESS', result.cartridgeId);
             }
         })
         .catch((error) => {
@@ -561,7 +573,6 @@ const test_upload = (callback, deviceId, payload) => {
 }
 
 const write_log = (deviceId, event_type, status, data) => {
-	// console.log('write_log', deviceId, event_type, status, data);
 	const loggedOn = new Date();
 	const _id = 'log_' + loggedOn.toISOString();
     const log_entry = {
@@ -609,7 +620,6 @@ const parseEvent = (event) => {
 }
 
 exports.handler = (event, context, callback) => {
-    // console.log('starting', event);
 	if (event) {
 		if (event.queryStringParameters) {
             const body = parseEvent(event);
@@ -617,20 +627,23 @@ exports.handler = (event, context, callback) => {
                 send_response(callback, body.deviceId || 'unknown', 'unknown', 'ERROR', 'Brevitest unknown event');
             } else {
                 switch (body.event_type) {
-                    case 'register-device':
-                        register_device(callback, body.deviceId);
+                    case 'verify-device':
+                        verify_device(callback, body.deviceId, body.data);
                         break;
                     case 'validate-cartridge':
                         validate_cartridge(callback, body.deviceId, body.data);
+                        break;
+                    case 'start-test':
+                        test_start(callback, body.deviceId, body.data);
                         break;
                     case 'upload-test':
                         test_upload(callback, body.deviceId, body.data);
                         break;
                     case 'test-event':
-                        send_response(callback, body.event_type, 'SUCCESS', 'Test event received', body.event_type);
+                        send_response(callback,  body.deviceId, body.event_type, 'SUCCESS', 'Test event received');
                         break;
                     default:
-                        send_response(callback, body.event_type, 'FAILURE', `Event not found:${body.event_type}`);
+                        send_response(callback,  body.deviceId, body.event_type, 'FAILURE', `Event type ${body.event_type} not found`);
                 }
             }
 		} else {
