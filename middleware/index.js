@@ -127,18 +127,18 @@ const instructionTime = (command, params) => {
         case 'Delay': // delay
             return parseInt(params.delay_ms);
         case 'Move Microns': // move microns
-            return Math.floor(Math.abs(parseInt(params.microns)) * parseInt(params.step_delay_us) / 25000);
+            return Math.floor(2 * Math.abs(parseInt(params.microns)) * parseInt(params.step_delay_us) / 25000);
         case 'Oscillate Stage': // oscillate
-            return Math.floor(2 * parseInt(params.cycles) * Math.abs(parseInt(params.microns)) * parseInt(params.step_delay_us) / 25000);
+            return Math.floor(4 * parseInt(params.cycles) * Math.abs(parseInt(params.microns)) * parseInt(params.step_delay_us) / 25000);
         case 'Buzz': // buzz the buzzer
             return parseInt(params.duration_ms);
         case 'Read Sensors': // read Sensors
         case 'Read Sensors With Parameters':
-            return 10000;
-        case 'Start Test': // starting sensor reading plus LED warmup
-            return 6000;
-        case 'Finish Test': // starting sensor reading plus LED warmup
-            return 6000;
+            return 2000;
+        case 'Start Test': // startup sequence
+            return 9000;
+        case 'Finish Test': // cleanup sequence
+            return 8000;
 	}
 	// jscs:enable requireCamelCaseOrUpperCaseIdentifiers
 	return 0;
