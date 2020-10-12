@@ -338,6 +338,9 @@ const validate_cartridge = (callback, deviceId, barcode) => {
             .then(([device, assay]) => {
                 // const device = docs[0];
                 // const assay = docs[1];
+                if (!device.verified) {
+                    throw new Error(`Device ${device.name} not verified`);
+                }
                 if (cartridge.siteId !== device.siteId) {
                     throw new Error(`Cartridge site ${cartridge.siteId} does not match device site ${device.siteId}`);
                 }
