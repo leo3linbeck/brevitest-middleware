@@ -1,4 +1,4 @@
-const axios = require('axios')
+const axios = require('axios');
 
 axios.defaults.baseURL = process.env.COUCHDB_URL;
 axios.defaults.headers.common['Authorization'] = process.env.COUCHDB_BASE64_AUTH;
@@ -9,34 +9,34 @@ const ITEM_DELIM = '|';
 const END_DELIM = "#";
 // const DELIMS = [ ARG_DELIM, ATTR_DELIM, ITEM_DELIM, END_DELIM ]
 
-const getStatus = (status) => status === 200 || status === 304
-const putStatus = (status) => status === 201 || status === 202
-const postStatus = (status) => status === 200 || status === 201
+const getStatus = (status) => status === 200 || status === 304;
+const putStatus = (status) => status === 201 || status === 202;
+const postStatus = (status) => status === 200 || status === 201;
 
 const saveDocument = (doc) => {
     const config = {
         validateStatus: putStatus
-    }
+    };
     return axios.put(`/${doc._id}`, { ...doc }, config);
-}
+};
 
 const getDocument = (docId) => {
     const config = {
         params: { include_docs: true },
         validateStatus: getStatus
-    }
+    };
     return axios.get(`/${docId}`, config);
-}
+};
 
 const getCartridgeWithBarcode = (barcode) => {
     const config = {
         params: { include_docs: true, key: `"${barcode}"` },
         validateStatus: getStatus
-    }
+    };
     return axios
         .get(`/_design/cartridges/_view/barcode`, config)
         .then((response) => {
-            const rows = response.data.rows
+            const rows = response.data.rows;
             if (!rows) {
                 throw new Error(`Missing data for barcode ${barcode}`);
             } else if (rows.length === 0) {
@@ -45,25 +45,25 @@ const getCartridgeWithBarcode = (barcode) => {
                 throw new Error(`${rows.length} records for ${barcode} found - only 1 allowed`);
             }
             return  rows[0].doc;
-        })
-}
+        });
+};
 
 const getMultipleDocuments = (keys) => {
     const config = {
         params: { include_docs: true },
         validateStatus: postStatus
-    }
+    };
     return axios
         .post(`/_all_docs`, { keys },  config)
         .then((response) => {
-            const rows = response.data.rows
+            const rows = response.data.rows;
             if (rows.length !== keys.length) {
-                const rowKeys = rows.map((row) => row.key)
+                const rowKeys = rows.map((row) => row.key);
                 throw new Error(`Document mismatch: searched for (${keys.join(',')}) and found (${rowKeys.join(',')})`);
             }
-            return rows.map((row) => row.doc)
-        })
-}
+            return rows.map((row) => row.doc);
+        });
+};
 
 const bcodeCommands = [{
 	num: '0',
@@ -119,19 +119,19 @@ const bcodeCommands = [{
 
 const getBcodeCommand = (cmd) => {
 	return bcodeCommands.find(e => e.name === cmd);
-}
+};
 
 const instructionTime = (command, params) => {
     // jscs:disable requireCamelCaseOrUpperCaseIdentifiers
 	switch (command) {
         case 'Delay': // delay
-            return parseInt(params.delay_ms);
+            return parseInt(params.delay_ms, 10);
         case 'Move Microns': // move microns
-            return Math.floor(2 * Math.abs(parseInt(params.microns)) * parseInt(params.step_delay_us) / 25000);
+            return Math.floor(2 * Math.abs(parseInt(params.microns, 10)) * parseInt(params.step_delay_us, 10) / 25000);
         case 'Oscillate Stage': // oscillate
-            return Math.floor(4 * parseInt(params.cycles) * Math.abs(parseInt(params.microns)) * parseInt(params.step_delay_us) / 25000);
+            return Math.floor(4 * parseInt(params.cycles, 10) * Math.abs(parseInt(params.microns, 10)) * parseInt(params.step_delay_us, 10) / 25000);
         case 'Buzz': // buzz the buzzer
-            return parseInt(params.duration_ms);
+            return parseInt(params.duration_ms, 10);
         case 'Read Sensors': // read Sensors
         case 'Read Sensors With Parameters':
             return 2000;
@@ -142,19 +142,19 @@ const instructionTime = (command, params) => {
 	}
 	// jscs:enable requireCamelCaseOrUpperCaseIdentifiers
 	return 0;
-}
+};
 
 const bcodeDuration = (bcodeArray) => {
     const total_duration = bcodeArray.reduce((duration, bcode) => {
             if (bcode.command === 'Repeat') {
-                return duration + bcodeDuration(bcode.code) * parseInt(bcode.count);
+                return duration + bcodeDuration(bcode.code) * parseInt(bcode.count, 10);
             } else {
                 return duration + instructionTime(bcode.command, bcode.params);
             }
         }, 0);
 
-    return parseInt(total_duration);
-}
+    return parseInt(total_duration, 10);
+};
 
 const compileInstruction = (cmd, args) => {
     const command = getBcodeCommand(cmd);
@@ -168,15 +168,15 @@ const compileInstruction = (cmd, args) => {
     } else {
         return command.num + ATTR_DELIM;
     }
-}
+};
 
 const compileRepeatBegin = (count) => {
 	return `20,${count}${ATTR_DELIM}`;
-}
+};
 
 const compileRepeatEnd = () => {
 	return `21${ATTR_DELIM}`;
-}
+};
 
 const bcodeCompile = (bcodeArray) => {
     return bcodeArray.reduce((compiledCode, bcode) => {
@@ -188,7 +188,7 @@ const bcodeCompile = (bcodeArray) => {
             return compiledCode + compileInstruction(bcode.command, bcode.params);
         }
     }, '');
-}
+};
 
 const crc32tab = [
 	0x00000000, 0x77073096, 0xee0e612c, 0x990951ba,
@@ -264,12 +264,12 @@ const checksum = (str) => {
     }
     crc = Math.abs(crc ^ -1);
     return crc;
-}
+};
 
 const generateResponseString = (cartridgeId, code) => {
-    const bcodeVersion = 2
+    const bcodeVersion = 2;
     const compiledBCODE =  bcodeCompile(code);
-    const duration = parseInt(bcodeDuration(code) / 1000);
+    const duration = parseInt(bcodeDuration(code) / 1000, 10);
     const result = [
         cartridgeId,
         bcodeVersion,
@@ -277,10 +277,10 @@ const generateResponseString = (cartridgeId, code) => {
         duration,
         compiledBCODE.length,
         compiledBCODE
-    ]
+    ];
 
     return result.join(ITEM_DELIM);
-}
+};
 
 const verify_device = (callback, coreId, deviceId) => {
     if (coreId !== deviceId) {
@@ -307,7 +307,7 @@ const verify_device = (callback, coreId, deviceId) => {
                 }
             });
     }
-}
+};
 
 const validate_cartridge = (callback, deviceId, barcode) => {
 	if (!barcode) {
@@ -355,7 +355,7 @@ const validate_cartridge = (callback, deviceId, barcode) => {
                 }
             });
     }
-}
+};
 
 const test_start = (callback, deviceId, cartridgeId) => {
     if (!cartridgeId) {
@@ -366,7 +366,7 @@ const test_start = (callback, deviceId, cartridgeId) => {
         .then (([cartridge, assay, device]) => {
             cartridge.device = device;
             cartridge.assay = assay;
-            cartridge.assay.duration = parseInt(bcodeDuration(assay.BCODE.code) / 1000);
+            cartridge.assay.duration = parseInt(bcodeDuration(assay.BCODE.code) / 1000, 10);
             cartridge.status = 'underway';
             cartridge.used = true;
             cartridge.testStartedOn = new Date();
@@ -383,7 +383,7 @@ const test_start = (callback, deviceId, cartridgeId) => {
                 send_response(callback, deviceId, 'start-test', 'ERROR', error);
             }
         });
-}
+};
 
 const parseReading = (reading) => {
 	const args = reading.split(ARG_DELIM);
@@ -391,7 +391,7 @@ const parseReading = (reading) => {
     const y = parseInt(args[2], 16);
     const z = parseInt(args[3], 16);
     const L = Math.round(Math.sqrt(x * x + y * y + z * z));
-return {
+    return {
 		channel: args[0],
 		x,
 		y,
@@ -399,129 +399,127 @@ return {
         L,
 		temperature: parseInt(args[4], 16)
 	};
-}
+};
 
 const parseData = (payload) => {
     if (payload[1] === 'A' || payload[1] === 'B') {
         if (payload[2] === '0') { // test cancelled
-            return { cartridgeId: payload[0], numberOfReadings: 0, readings: [] }
+            return { cartridgeId: payload[0], numberOfReadings: 0, readings: [] };
         } else {
             const readings = payload[2].split(ATTR_DELIM).map(reading => parseReading(reading));
             return {
                 cartridgeId: payload[0],
                 numberOfReadings: readings.length,
                 readings
-            }
+            };
         }
     } else {
-        return { cartridgeId: payload[0], numberOfReadings: 0, readings: [] }
+        return { cartridgeId: payload[0], numberOfReadings: 0, readings: [] };
     }
-}
+};
 
-const sqrt3 = Math.sqrt(3)
+const sqrt3 = Math.sqrt(3);
 
 const hypotenuse = (v) => {
-    return Math.sqrt(v.x * v.x + v.y * v.y + v.z * v.z)
-}
+    return Math.sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
+};
 
 const magnitude = (v) => {
-    return Math.round((1000 * hypotenuse(v)) / sqrt3)
-}
+    return Math.round((1000 * hypotenuse(v)) / sqrt3);
+};
 
 const readoutValue = (baseline, final) => {
     const ratio = {
         x: final.x ? baseline.x / final.x : 0,
         y: final.y ? baseline.y / final.y : 0,
         z: final.z ? baseline.z / final.z : 0
-    }
-    return magnitude(ratio)
-}
+    };
+    return magnitude(ratio);
+};
 
 const avgReadings = (readings, indexes) => {
-    const count = indexes.length
+    const count = indexes.length;
     const sum = indexes.reduce(
         (total, index) => {
             return {
                 x: total.x + readings[index].x,
                 y: total.y + readings[index].y,
                 z: total.z + readings[index].z
-            }
+            };
         },
         { x: 0, y: 0, z: 0 }
-    )
-    return { x: sum.x / count, y: sum.y / count, z: sum.z / count }
-}
+    );
+    return { x: sum.x / count, y: sum.y / count, z: sum.z / count };
+};
 
-const L_MAX = 7500
-const L_MIN = 4500
-const C_0_MAX = 1080
-const C_0_MIN = 920
+const L_MAX = 7500;
+const L_MIN = 4500;
+const C_0_MAX = 1080;
+const C_0_MIN = 920;
 
 const validateReadings = (readings, readouts, assay) => {
     const validation = [];
     readings.slice(0, 6).forEach((reading, index) => {
         if (reading.L < L_MIN) {
-            validation.push(`reading ${index} too low (${reading.L.toFixed(1)} < ${L_MIN})`)
+            validation.push(`reading ${index} too low (${reading.L.toFixed(1)} < ${L_MIN})`);
         } else if (reading.L > L_MAX) {
-            validation.push(`reading ${index} too high (${reading.L.toFixed(1)} > ${L_MAX.toFixed(1)})`)
+            validation.push(`reading ${index} too high (${reading.L.toFixed(1)} > ${L_MAX.toFixed(1)})`);
         }
-    })
+    });
     if (readouts.control0 > C_0_MAX) {
-        validation.push(`control0 too high (${readouts.control0.toFixed(1)} > ${C_0_MAX.toFixed(1)})`)
+        validation.push(`control0 too high (${readouts.control0.toFixed(1)} > ${C_0_MAX.toFixed(1)})`);
     }
     if (readouts.control0 < C_0_MIN) {
-        validation.push(`control0 too low (${readouts.control0.toFixed(1)} < ${C_0_MIN.toFixed(1)})`)
+        validation.push(`control0 too low (${readouts.control0.toFixed(1)} < ${C_0_MIN.toFixed(1)})`);
     }
     if (readouts.controlHigh > assay.analysis.controlHigh.max) {
-        validation.push(`controlHigh too high (${readouts.controlHigh.toFixed(1)} > ${assay.analysis.controlHigh.max.toFixed(1)})`)
+        validation.push(`controlHigh too high (${readouts.controlHigh.toFixed(1)} > ${assay.analysis.controlHigh.max.toFixed(1)})`);
     }
     if (readouts.controlHigh < assay.analysis.controlHigh.min) {
-        validation.push(`controlHigh too low (${readouts.controlHigh.toFixed(1)} < ${assay.analysis.controlHigh.min.toFixed(1)})`)
+        validation.push(`controlHigh too low (${readouts.controlHigh.toFixed(1)} < ${assay.analysis.controlHigh.min.toFixed(1)})`);
     }
-    const controlDelta = readouts.controlHigh - readouts.control0
+    const controlDelta = readouts.controlHigh - readouts.control0;
     if (controlDelta > assay.analysis.controlDelta.max) {
-        validation.push(`(controlHigh - control0) too high (${controlDelta.toFixed(1)} > ${assay.analysis.controlDelta.max.toFixed(1)})`)
+        validation.push(`(controlHigh - control0) too high (${controlDelta.toFixed(1)} > ${assay.analysis.controlDelta.max.toFixed(1)})`);
     }
     if (controlDelta < assay.analysis.controlDelta.min) {
-        validation.push(`(controlHigh - control0) too low (${controlDelta.toFixed(1)} < ${assay.analysis.controlDelta.min.toFixed(1)})`)
+        validation.push(`(controlHigh - control0) too low (${controlDelta.toFixed(1)} < ${assay.analysis.controlDelta.min.toFixed(1)})`);
     }
 
     return validation.length ? validation : false;
-}
+};
 
 const calculateReadouts = (readings, assay) => {
-    const sample = readoutValue(avgReadings(readings, [0, 3]), avgReadings(readings, [6, 9, 12]))
-    const control1 = readoutValue(avgReadings(readings, [1, 4]), avgReadings(readings, [7, 10, 13]))
-    const control2 = readoutValue(avgReadings(readings, [2, 5]), avgReadings(readings, [8, 11, 14]))
-    const control0 = control1 > control2 ? control2 : control1
-    const controlHigh = control1 > control2 ? control1 : control2
-    const concentration = Number.parseFloat((assay.analysis.controlHighConcentration * (sample - control0) / (controlHigh - control0)).toFixed(1))
+    const sample = readoutValue(avgReadings(readings, [0, 3]), avgReadings(readings, [6, 9, 12]));
+    const control0 = readoutValue(avgReadings(readings, [1, 4]), avgReadings(readings, [7, 10, 13]));
+    const controlHigh = readoutValue(avgReadings(readings, [2, 5]), avgReadings(readings, [8, 11, 14]));
+    const concentration = Number.parseFloat((assay.analysis.controlHighConcentration * (sample - control0) / (controlHigh - control0)).toFixed(1));
     // console.log(sample, control0, controlHigh, concentration)
-    return { sample, control0, controlHigh, concentration }
-}
+    return { sample, control0, controlHigh, concentration };
+};
 
 const calculateResult = (concentration, cutScores, invalid) => {
     if (!cutScores) {
-        return 'Unknown'
+        return 'Unknown';
     } else if (invalid) {
-        return 'Invalid'
+        return 'Invalid';
     } else if (typeof concentration !== 'number') {
-        return 'Error'
+        return 'Error';
     } else if (concentration > cutScores.redMax || concentration < cutScores.redMin) {
-        return 'Positive'
+        return 'Positive';
     } else if (concentration > cutScores.greenMax || concentration < cutScores.greenMin) {
-        return 'Borderline'
+        return 'Borderline';
     } else {
-        return 'Negative'
+        return 'Negative';
     }
-}
+};
 
 const invalidResult = (cartridge, message) => {
-    cartridge.readouts = { sample: null, control0: null, controlHigh: null, concentration: null }
+    cartridge.readouts = { sample: null, control0: null, controlHigh: null, concentration: null };
     cartridge.validationErrors = [message];
     cartridge.result = null;
-    return true
-}
+    return true;
+};
 
 const test_upload = (callback, deviceId, payload) => {
     const result = parseData(payload);
@@ -535,7 +533,7 @@ const test_upload = (callback, deviceId, payload) => {
             const cartridge = response.data;
             cartridge.testFinishedOn = new Date();
             if (result.numberOfReadings) {
-                cartridge.status = 'completed'
+                cartridge.status = 'completed';
                 cartridge.rawData = result;
                 if (!result.readings) {
                     invalid_test = invalidResult(cartridge,'No optical readings');
@@ -553,7 +551,7 @@ const test_upload = (callback, deviceId, payload) => {
                 cartridge.status = 'cancelled';
                 cartridge.rawData = null;
                 cartridge.validationErrors = false;
-                cartridge.readouts = { sample: null, control0: null, controlHigh: null, concentration: null }
+                cartridge.readouts = { sample: null, control0: null, controlHigh: null, concentration: null };
                 cartridge.result = null;
                 }
             return saveDocument(cartridge);
@@ -573,7 +571,7 @@ const test_upload = (callback, deviceId, payload) => {
                 send_response(callback, deviceId, 'upload-test', 'ERROR', error);
             }
         });
-}
+};
 
 const write_log = (deviceId, event_type, status, data) => {
 	const loggedOn = new Date();
@@ -595,9 +593,9 @@ const write_log = (deviceId, event_type, status, data) => {
             }
         })
         .catch((error) => {
-            console.error('Log entry save error', error)
+            console.error('Log entry save error', error);
         });
-}
+};
 
 const send_response = (callback, deviceId, event_type, status, data) => {
     const response = {
@@ -607,10 +605,10 @@ const send_response = (callback, deviceId, event_type, status, data) => {
 
 	write_log(deviceId, event_type, status, data);
     const responseData = typeof(data) === 'object' ? JSON.stringify(data) : data;
-    response.body = `${event_type}${ITEM_DELIM}${status}${ITEM_DELIM}${responseData}${END_DELIM}`
+    response.body = `${event_type}${ITEM_DELIM}${status}${ITEM_DELIM}${responseData}${END_DELIM}`;
 
 	callback(null, response);
-}
+};
 
 const parseEvent = (event) => {
     const payload = event.queryStringParameters.data.split(ITEM_DELIM);
@@ -619,8 +617,8 @@ const parseEvent = (event) => {
         event_type: payload[0],
         deviceId: event.queryStringParameters.coreid,
         data: payload.length === 2 ? payload[1] : payload.slice(1)
-    }
-}
+    };
+};
 
 exports.handler = (event, context, callback) => {
 	if (event) {
@@ -655,4 +653,4 @@ exports.handler = (event, context, callback) => {
 	} else {
 		send_response(callback, 'unknown', 'unknown', 'ERROR', 'Brevitest request malformed');
 	}
-}
+};
