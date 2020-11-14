@@ -289,9 +289,10 @@ const verify_device = (callback, coreId, deviceId) => {
         getDocument(deviceId)
             .then ((response) => {
                 const device = response.data;
-                if (!device.verified) {
-                    send_response(callback, deviceId, 'verify-device', 'FAILURE', 'Device not verified');
+                if (!device.validated) {
+                    send_response(callback, deviceId, 'verify-device', 'FAILURE', 'Device not validated');
                 } else {
+                    device.verified = true;
                     device.lastActiveOn = device.lastVerifiedOn = new Date();
                     return saveDocument(device);    
                 }
@@ -573,6 +574,77 @@ const test_upload = (callback, deviceId, payload) => {
         });
 };
 
+const GAUSS_Z_MINIMUM = 3900;
+
+const validate_magnets = (callback, deviceId, payload) => {
+    const rows = payload.split('\n').slice(0, -1);
+    const data = [];
+    rows.slice(1).forEach((row) => {
+        const well = row.split('\t');
+        data.push({
+            well: well[0],
+            channel: "sample",
+            temperature: parseFloat(well[1]),
+            gauss_x: parseFloat(well[2]),
+            gauss_y: parseFloat(well[3]),
+            gauss_z: parseFloat(well[4])
+        });
+        data.push({
+            well: well[0],
+            channel: "control_low",
+            temperature: parseFloat(well[5]),
+            gauss_x: parseFloat(well[6]),
+            gauss_y: parseFloat(well[7]),
+            gauss_z: parseFloat(well[8])
+        });
+        data.push({
+            well: well[0],
+            channel: "control_high",
+            temperature: parseFloat(well[9]),
+            gauss_x: parseFloat(well[10]),
+            gauss_y: parseFloat(well[11]),
+            gauss_z: parseFloat(well[12])
+        });
+    });
+
+    const validated = data.reduce((ok, well) => {
+        return ok && (well.gauss_z > GAUSS_Z_MINIMUM); 
+    }, true);
+    
+    const validationDate = new Date();
+
+    getDocument(deviceId)
+        .then ((response) => {
+            const device = {
+                ...response.data,
+                validated,
+                validation: {
+                    magnetometer: {
+                        instrument: rows[0],
+                        validationDate,
+                        data
+                    }
+                }
+            };
+            if (validated) {
+                device.lastValidatedOn = validationDate;
+            }
+            console.log(device);
+            return saveDocument(device);
+        })
+        .then(() => {
+            send_response(callback, deviceId, 'validate-magnets', 'SUCCESS', validated ? 'validated' : 'not validated');
+        })
+        .catch((error) => {
+            if (error.message) {
+                send_response(callback, deviceId, 'validate-magnets', 'FAILURE', error.message);
+            } else {
+                send_response(callback, deviceId, 'validate-magnets', 'ERROR', deviceId);
+            }
+        });
+};
+
+
 const write_log = (deviceId, event_type, status, data) => {
 	const loggedOn = new Date();
 	const _id = 'log_' + loggedOn.toISOString();
@@ -639,6 +711,9 @@ exports.handler = (event, context, callback) => {
                         break;
                     case 'upload-test':
                         test_upload(callback, body.deviceId, body.data);
+                        break;
+                    case 'validate-magnets':
+                        validate_magnets(callback, body.deviceId, body.data);
                         break;
                     case 'test-event':
                         send_response(callback,  body.deviceId, body.event_type, 'SUCCESS', 'Test event received');
