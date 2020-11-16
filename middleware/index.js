@@ -574,7 +574,7 @@ const test_upload = (callback, deviceId, payload) => {
         });
 };
 
-const GAUSS_Z_MINIMUM = 3900;
+const GAUSS_Z_MINIMUM = 3750;
 
 const validate_magnets = (callback, deviceId, payload) => {
     const rows = payload.split('\n').slice(0, -1);
