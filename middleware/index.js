@@ -608,7 +608,7 @@ const validate_magnets = (callback, deviceId, payload) => {
     });
 
     const validated = data.reduce((ok, well) => {
-        return ok && (well.gauss_z > GAUSS_Z_MINIMUM); 
+        return ok && (Math.abs(well.gauss_z) > GAUSS_Z_MINIMUM); 
     }, true);
     
     const validationDate = new Date();
