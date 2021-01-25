@@ -453,25 +453,25 @@ const avgReadings = (readings, indexes) => {
     return { x: sum.x / count, y: sum.y / count, z: sum.z / count };
 };
 
-const L_MAX = 7500;
-const L_MIN = 4500;
-const C_0_MAX = 1080;
-const C_0_MIN = 920;
+// const L_MAX = 7500;
+// const L_MIN = 4500;
+// const C_0_MAX = 1080;
+// const C_0_MIN = 920;
 
 const validateReadings = (readings, readouts, assay) => {
     const validation = [];
     readings.slice(0, 6).forEach((reading, index) => {
-        if (reading.L < L_MIN) {
-            validation.push(`reading ${index} too low (${reading.L.toFixed(1)} < ${L_MIN})`);
-        } else if (reading.L > L_MAX) {
-            validation.push(`reading ${index} too high (${reading.L.toFixed(1)} > ${L_MAX.toFixed(1)})`);
+        if (reading.L < process.env.OPTICS_L_MIN) {
+            validation.push(`reading ${index} too low (${reading.L.toFixed(1)} < ${process.env.OPTICS_L_MIN})`);
+        } else if (reading.L > process.env.OPTICS_L_MAX) {
+            validation.push(`reading ${index} too high (${reading.L.toFixed(1)} > ${process.env.OPTICS_L_MAX.toFixed(1)})`);
         }
     });
-    if (readouts.control0 > C_0_MAX) {
-        validation.push(`control0 too high (${readouts.control0.toFixed(1)} > ${C_0_MAX.toFixed(1)})`);
+    if (readouts.control0 > process.env.OPTICS_C_0_MAX) {
+        validation.push(`control0 too high (${readouts.control0.toFixed(1)} > ${process.env.OPTICS_C_0_MAX.toFixed(1)})`);
     }
-    if (readouts.control0 < C_0_MIN) {
-        validation.push(`control0 too low (${readouts.control0.toFixed(1)} < ${C_0_MIN.toFixed(1)})`);
+    if (readouts.control0 < process.env.OPTICS_C_0_MIN) {
+        validation.push(`control0 too low (${readouts.control0.toFixed(1)} < ${process.env.OPTICS_C_0_MIN.toFixed(1)})`);
     }
     if (readouts.controlHigh > assay.analysis.controlHigh.max) {
         validation.push(`controlHigh too high (${readouts.controlHigh.toFixed(1)} > ${assay.analysis.controlHigh.max.toFixed(1)})`);
@@ -574,7 +574,85 @@ const test_upload = (callback, deviceId, payload) => {
         });
 };
 
-const GAUSS_Z_MINIMUM = 3700;
+const within_bounds = (readings, max, min) => {
+    return readings.reduce((ok, reading) => {
+        return ok && (reading.L <= max && reading.L >= min); 
+    }, true);
+};
+
+const device_validated = (validation) => {
+    // const valid_magnetometer = magnetometer === null
+    //         ?   true
+    //         :   magnetometer.data.reduce((ok, well) => {
+    //                 return ok && (Math.abs(well.gauss_z) > process.env.MAGNET_MINIMUM_Z_GAUSS); 
+    //             }, true);
+    let validated = true;
+    if (validation.magnetometer) {
+        validation.magnetometer.valid = validation.magnetometer.data.reduce((ok, well) => {
+            return ok && (Math.abs(well.gauss_z) > process.env.MAGNET_MINIMUM_Z_GAUSS); 
+        }, true);
+        validated = validated && validation.magnetometer.valid;
+    }
+    if (validation.color201) {
+        validation.color201.valid = within_bounds(validation.color201.data, process.env.OPTICS_201_MAX, process.env.OPTICS_201_MIN);
+        validated = validated && validation.color201.valid;
+    }
+    if (validation.color202) {
+        validation.color202.valid = within_bounds(validation.color202.data, process.env.OPTICS_202_MAX, process.env.OPTICS_202_MIN);
+        validated = validated && validation.color202.valid;
+    }
+    if (validation.color203) {
+        validation.color203.valid = within_bounds(validation.color203.data, process.env.OPTICS_203_MAX, process.env.OPTICS_203_MIN);
+        validated = validated && validation.color203.valid;
+    }
+    console.log('validated', validation, validated);
+    return validated;
+};
+
+const update_validation = (callback, eventName, deviceId, magnetometer, color) => {
+    let validated = false;
+    const validationDate = new Date();
+    getDocument(deviceId)
+        .then ((response) => {
+            const validation = response.data.validation || {
+                    magnetometer: {},
+                    color201: {},
+                    color202: {},
+                    color203: {}
+                };
+            
+            if (magnetometer) {
+                validation.magnetometer = { ...magnetometer, validationDate };
+            } else if (color.n0201) {
+                validation.color201 = { ...color.n0201, validationDate };
+            } else if (color.n0202) {
+                validation.color202 = { ...color.n0202, validationDate };
+            } else if (color.n0203) {
+                validation.color203 = { ...color.n0203, validationDate };
+            }
+            validated = device_validated(validation);
+            const device = {
+                ...response.data,
+                validated,
+                validation
+            };
+            if (validated) {
+                device.lastValidatedOn = validationDate;
+            }
+            console.log(device);
+            return saveDocument(device);
+        })
+        .then(() => {
+            send_response(callback, deviceId, eventName, 'SUCCESS', validated ? 'validated' : 'not validated');
+        })
+        .catch((error) => {
+            if (error.message) {
+                send_response(callback, deviceId, eventName, 'FAILURE', error.message);
+            } else {
+                send_response(callback, deviceId, eventName, 'ERROR', deviceId);
+            }
+        });
+};
 
 const validate_magnets = (callback, deviceId, payload) => {
     const rows = payload.split('\n').slice(0, -1);
@@ -607,43 +685,32 @@ const validate_magnets = (callback, deviceId, payload) => {
         });
     });
 
-    const validated = data.reduce((ok, well) => {
-        return ok && (Math.abs(well.gauss_z) > GAUSS_Z_MINIMUM); 
-    }, true);
-    
-    const validationDate = new Date();
+    const magnetometer = {
+        instrument: rows[0],
+        data
+    };
 
-    getDocument(deviceId)
-        .then ((response) => {
-            const device = {
-                ...response.data,
-                validated,
-                validation: {
-                    magnetometer: {
-                        instrument: rows[0],
-                        validationDate,
-                        data
-                    }
-                }
-            };
-            if (validated) {
-                device.lastValidatedOn = validationDate;
-            }
-            console.log(device);
-            return saveDocument(device);
-        })
-        .then(() => {
-            send_response(callback, deviceId, 'validate-magnets', 'SUCCESS', validated ? 'validated' : 'not validated');
-        })
-        .catch((error) => {
-            if (error.message) {
-                send_response(callback, deviceId, 'validate-magnets', 'FAILURE', error.message);
-            } else {
-                send_response(callback, deviceId, 'validate-magnets', 'ERROR', deviceId);
-            }
-        });
+    update_validation(callback, 'validate-magnets', deviceId, magnetometer, null);
 };
 
+const validate_optics = (callback, deviceId, payload) => {
+    const data = parseData(payload);
+    console.log('data', data);
+    if (!data.cartridgeId) {
+        send_response(callback, deviceId, 'validate-optics', 'FAILURE', 'Missing optical instrument code');
+    }
+    const codes = data.cartridgeId.split('-');
+    if (codes[0] !== 'OPT') {
+        send_response(callback, deviceId, 'validate-optics', 'FAILURE', 'Incorrect barcode for optical test');
+    }
+    const color = {};
+    color['n' + codes[2]] = {
+        instrument: data.cartridgeId,
+        data: [ ...data.readings ]
+
+    };
+    update_validation(callback, 'validate-optics', deviceId, null, color);
+};
 
 const write_log = (deviceId, event_type, status, data) => {
 	const loggedOn = new Date();
@@ -715,7 +782,10 @@ exports.handler = (event, context, callback) => {
                     case 'validate-magnets':
                         validate_magnets(callback, body.deviceId, body.data);
                         break;
-                    case 'test-event':
+                    case 'validate-optics':
+                        validate_optics(callback, body.deviceId, body.data);
+                        break;
+                        case 'test-event':
                         send_response(callback,  body.deviceId, body.event_type, 'SUCCESS', 'Test event received');
                         break;
                     default:
