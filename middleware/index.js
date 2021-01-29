@@ -453,25 +453,20 @@ const avgReadings = (readings, indexes) => {
     return { x: sum.x / count, y: sum.y / count, z: sum.z / count };
 };
 
-// const L_MAX = 7500;
-// const L_MIN = 4500;
-// const C_0_MAX = 1080;
-// const C_0_MIN = 920;
-
 const validateReadings = (readings, readouts, assay) => {
     const validation = [];
     readings.slice(0, 6).forEach((reading, index) => {
         if (reading.L < process.env.OPTICS_L_MIN) {
             validation.push(`reading ${index} too low (${reading.L.toFixed(1)} < ${process.env.OPTICS_L_MIN})`);
         } else if (reading.L > process.env.OPTICS_L_MAX) {
-            validation.push(`reading ${index} too high (${reading.L.toFixed(1)} > ${process.env.OPTICS_L_MAX.toFixed(1)})`);
+            validation.push(`reading ${index} too high (${reading.L.toFixed(1)} > ${process.env.OPTICS_L_MAX})`);
         }
     });
     if (readouts.control0 > process.env.OPTICS_C_0_MAX) {
-        validation.push(`control0 too high (${readouts.control0.toFixed(1)} > ${process.env.OPTICS_C_0_MAX.toFixed(1)})`);
+        validation.push(`control0 too high (${readouts.control0.toFixed(1)} > ${process.env.OPTICS_C_0_MAX})`);
     }
     if (readouts.control0 < process.env.OPTICS_C_0_MIN) {
-        validation.push(`control0 too low (${readouts.control0.toFixed(1)} < ${process.env.OPTICS_C_0_MIN.toFixed(1)})`);
+        validation.push(`control0 too low (${readouts.control0.toFixed(1)} < ${process.env.OPTICS_C_0_MIN})`);
     }
     if (readouts.controlHigh > assay.analysis.controlHigh.max) {
         validation.push(`controlHigh too high (${readouts.controlHigh.toFixed(1)} > ${assay.analysis.controlHigh.max.toFixed(1)})`);
