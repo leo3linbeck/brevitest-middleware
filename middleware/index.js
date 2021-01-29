@@ -7,7 +7,6 @@ const ARG_DELIM = ',';
 const ATTR_DELIM = ':';
 const ITEM_DELIM = '|';
 const END_DELIM = "#";
-// const DELIMS = [ ARG_DELIM, ATTR_DELIM, ITEM_DELIM, END_DELIM ]
 
 const getStatus = (status) => status === 200 || status === 304;
 const putStatus = (status) => status === 201 || status === 202;
@@ -780,7 +779,7 @@ exports.handler = (event, context, callback) => {
                     case 'validate-optics':
                         validate_optics(callback, body.deviceId, body.data);
                         break;
-                        case 'test-event':
+                    case 'test-event':
                         send_response(callback,  body.deviceId, body.event_type, 'SUCCESS', 'Test event received');
                         break;
                     default:
