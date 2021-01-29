@@ -461,11 +461,11 @@ const validateReadings = (readings, readouts, assay) => {
             validation.push(`reading ${index} too high (${reading.L.toFixed(1)} > ${process.env.OPTICS_L_MAX})`);
         }
     });
-    if (readouts.control0 > process.env.OPTICS_C_0_MAX) {
-        validation.push(`control0 too high (${readouts.control0.toFixed(1)} > ${process.env.OPTICS_C_0_MAX})`);
+    if (readouts.control0 > assay.analysis.controlLow.max) {
+        validation.push(`control0 too high (${readouts.control0.toFixed(1)} > ${assay.analysis.controlLow.max.toFixed(1)})`);
     }
-    if (readouts.control0 < process.env.OPTICS_C_0_MIN) {
-        validation.push(`control0 too low (${readouts.control0.toFixed(1)} < ${process.env.OPTICS_C_0_MIN})`);
+    if (readouts.control0 < assay.analysis.controlLow.min) {
+        validation.push(`control0 too low (${readouts.control0.toFixed(1)} < ${assay.analysis.controlLow.min.toFixed(1)}`);
     }
     if (readouts.controlHigh > assay.analysis.controlHigh.max) {
         validation.push(`controlHigh too high (${readouts.controlHigh.toFixed(1)} > ${assay.analysis.controlHigh.max.toFixed(1)})`);
