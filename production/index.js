@@ -9,6 +9,7 @@ const ITEM_DELIM = '|';
 const END_DELIM = "#";
 
 const getStatus = (status) => status === 200 || status === 304;
+const verifyStatus = (status) => status === 200 || status === 404;
 const putStatus = (status) => status === 201 || status === 202;
 const postStatus = (status) => status === 200 || status === 201;
 
@@ -27,6 +28,14 @@ const getDocument = (docId) => {
     return axios.get(`/${docId}`, config);
 };
 
+const documentExists = (docId) => {
+    const config = {
+        params: { include_docs: true },
+        validateStatus: verifyStatus
+    };
+    return axios.get(`/${docId}`, config)
+};
+
 const getCartridgeWithBarcode = (barcode) => {
     const config = {
         params: { include_docs: true, key: `"${barcode}"` },
@@ -42,6 +51,26 @@ const getCartridgeWithBarcode = (barcode) => {
                 throw new Error(`Barcode ${barcode} not found in database`);
             } else if (rows.length > 1) {
                 throw new Error(`${rows.length} records for ${barcode} found - only 1 allowed`);
+            }
+            return  rows[0].doc;
+        });
+};
+
+const getCartridgeWithSerialNumber = (serialNumber) => {
+    const config = {
+        params: { include_docs: true, key: `"${serialNumber}"` },
+        validateStatus: getStatus
+    };
+    return axios
+        .get(`/_design/cartridges/_view/serialNumber`, config)
+        .then((response) => {
+            const rows = response.data.rows;
+            if (!rows) {
+                throw new Error(`Missing data for serial number ${serialNumber}`);
+            } else if (rows.length === 0) {
+                throw new Error(`Serial Number ${serialNumber} not found in database`);
+            } else if (rows.length > 1) {
+                throw new Error(`${rows.length} records for ${serialNumber} found - only 1 allowed`);
             }
             return  rows[0].doc;
         });
@@ -265,12 +294,12 @@ const checksum = (str) => {
     return crc;
 };
 
-const generateResponseString = (cartridgeId, code) => {
+const generateResponseString = (serialNumber, code) => {
     const bcodeVersion = 2;
     const compiledBCODE =  bcodeCompile(code);
     const duration = parseInt(bcodeDuration(code) / 1000, 10);
     const result = [
-        cartridgeId,
+        serialNumber,
         bcodeVersion,
         checksum(compiledBCODE),
         duration,
@@ -309,6 +338,18 @@ const verify_device = (callback, coreId, deviceId) => {
     }
 };
 
+const loadCartridge = (barcode) => {
+    return documentExists(barcode)
+        .then((response) => {
+            console.log(response.status);
+            if (response.status == 200) {
+                return response.data;
+            } else {
+                return getCartridgeWithBarcode(barcode);
+            }
+        });
+};
+
 const validate_cartridge = (callback, deviceId, barcode) => {
 	if (!barcode) {
         send_response(callback, deviceId, 'validate-cartridge', 'FAILURE', `Barcode missing`);
@@ -316,7 +357,7 @@ const validate_cartridge = (callback, deviceId, barcode) => {
         send_response(callback, deviceId, 'validate-cartridge', 'FAILURE', `Device ID missing`);
     } else {
         let cartridge = null;
-        getCartridgeWithBarcode(barcode)
+        loadCartridge(barcode)
             .then((c) => {
                 cartridge = c;
                 if (!cartridge) {
@@ -331,8 +372,10 @@ const validate_cartridge = (callback, deviceId, barcode) => {
                     throw new Error(`Cartridge ${cartridge._id} is missing an order number`);
                 } else if (!cartridge.siteId) {
                     throw new Error(`Cartridge ${cartridge._id} is not assigned to a site`);
+                } else if (cartridge._id.length === 36 && !cartridge.serialNumber) {
+                    throw new Error(`Cartridge ${cartridge._id} is missing a serial number`);
                 }
-                const assayId = cartridge._id.slice(0, 8);
+                const assayId = cartridge._id.length === 24 ? cartridge._id.slice(0, 8) : cartridge.serialNumber.slice(0, 8);
                 return getMultipleDocuments([deviceId, assayId]);
             })
             .then(([device, assay]) => {
@@ -344,10 +387,12 @@ const validate_cartridge = (callback, deviceId, barcode) => {
                 if (cartridge.siteId !== device.siteId) {
                     throw new Error(`Cartridge site ${cartridge.siteId} does not match device site ${device.siteId}`);
                 }
-                const responseString = generateResponseString(cartridge._id, assay.BCODE.code);
+                const cartSN = cartridge._id.length === 24 ? cartridge._id : cartridge.serialNumber;
+                const responseString = generateResponseString(cartSN, assay.BCODE.code);
                 send_response(callback, deviceId, 'validate-cartridge', 'SUCCESS', responseString);
             })
             .catch((error) => {
+                if (error)
                 if (error.message) {
                     send_response(callback, deviceId, 'validate-cartridge', 'FAILURE', error.message);
                 } else {
@@ -357,13 +402,19 @@ const validate_cartridge = (callback, deviceId, barcode) => {
     }
 };
 
-const test_start = (callback, deviceId, cartridgeId) => {
-    if (!cartridgeId) {
+const test_start = (callback, deviceId, serialNumber) => {
+    if (!serialNumber) {
         throw new Error(`FAILURE: Cartridge ID is missing.`);
     }
 
-    getMultipleDocuments([cartridgeId, cartridgeId.slice(0, 8), deviceId])
-        .then (([cartridge, assay, device]) => {
+    let cartridge = null
+    getCartridgeWithSerialNumber(serialNumber)
+        .then((c) => {
+            cartridge = c
+            const assayId = cartridge._id.length === 24 ? cartridge._id.slice(0, 8) : cartridge.serialNumber.slice(0, 8);
+            return getMultipleDocuments([deviceId, assayId]);
+        })
+        .then (([device, assay]) => {
             cartridge.device = device;
             cartridge.assay = assay;
             cartridge.assay.duration = parseInt(bcodeDuration(assay.BCODE.code) / 1000, 10);
@@ -373,13 +424,13 @@ const test_start = (callback, deviceId, cartridgeId) => {
             return saveDocument(cartridge);
         })
         .then((response) => {
-            send_response(callback, deviceId, 'start-test', 'SUCCESS', cartridgeId);
+            send_response(callback, deviceId, 'start-test', 'SUCCESS', serialNumber);
         })
         .catch((error) => {
             if (error.message) {
                 send_response(callback, deviceId, 'start-test', 'FAILURE', error.message);
             } else {
-                error.cartridgeId = cartridgeId;
+                error.serialNumber = serialNumber;
                 send_response(callback, deviceId, 'start-test', 'ERROR', error);
             }
         });
@@ -523,9 +574,8 @@ const test_upload = (callback, deviceId, payload) => {
     }
 
     let invalid_test = false;
-    getDocument(result.cartridgeId)
-        .then ((response) => {
-            const cartridge = response.data;
+    getCartridgeWithSerialNumber(result.cartridgeId)
+        .then ((cartridge) => {
             cartridge.testFinishedOn = new Date();
             if (result.numberOfReadings) {
                 cartridge.status = 'completed';
@@ -587,15 +637,15 @@ const device_validated = (validation) => {
         }, true);
         validated = validated && validation.magnetometer.valid;
     }
-    if (validation.color201) {
+    if (validation.color201 && Object.keys(validation.color201).length) {
         validation.color201.valid = within_bounds(validation.color201.data, process.env.OPTICS_201_MAX, process.env.OPTICS_201_MIN);
         validated = validated && validation.color201.valid;
     }
-    if (validation.color202) {
+    if (validation.color202 && Object.keys(validation.color202).length) {
         validation.color202.valid = within_bounds(validation.color202.data, process.env.OPTICS_202_MAX, process.env.OPTICS_202_MIN);
         validated = validated && validation.color202.valid;
     }
-    if (validation.color203) {
+    if (validation.color203 && Object.keys(validation.color203).length) {
         validation.color203.valid = within_bounds(validation.color203.data, process.env.OPTICS_203_MAX, process.env.OPTICS_203_MIN);
         validated = validated && validation.color203.valid;
     }
