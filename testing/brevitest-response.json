@@ -1,0 +1,18 @@
+{
+    "labReportDetails": [
+        {
+            "labReportId": "could be 'labReportIndex' - provided by Crelio in order",
+            "testCode": "optional, provided for error checking",
+            "accessionNo": "optional, provided for error checking, could be 'sample.id' - provided by Crelio in order",
+            "testID": "assigned and provided by Crelio in order",
+            "testResult": "string provided by Brevitest",
+            "testScore": "number provided by Brevitest",
+            "testDate": "ISO datetimestring provided by Brevitest"
+        }
+    ]
+}
+
+// NOTES
+//
+// 'labReportId' should be a unique identifier. Could be labReportIndex or reportID.testId.
+// 'accessionNo' should be unique identifier. Could also be 'id'

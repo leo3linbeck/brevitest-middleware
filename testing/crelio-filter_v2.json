@@ -11,13 +11,13 @@
     "billReferral": "REMOVE",
     "apiUser": "KEEP",
     "labId": {
-        "labId": "KEEP - FLATTEN",
+        "labId": "KEEP",
         "labName": "REMOVE"
     },
     "billTotalAmount": "REMOVE",
     "billId": "REMOVE",
     "Patient Alternate Contact": "REMOVE",
-    "Patient Dob": "KEEP",
+    "Patient Dob": "REMOVE",
     "Status": "KEEP",
     "Mobile Number": "REMOVE",
     "Patient gender": "REMOVE",
@@ -32,12 +32,12 @@
             "labReportIndex": "KEEP",
             "sampleDate": "KEEP",
             "labId": {
-                "labName": "REMOVE",
-                "labId": "KEEP - FLATTEN"
+                "labName": "IGNORE",
+                "labId": "IGNORE"
             },
             "orgId": {
-                "orgId": "KEEP - FLATTEN",
-                "orgFullName": "REMOVE"
+                "orgId": "IGNORE",
+                "orgFullName": "IGNORE"
             },
             "reportID": {
                 "testAmount": "REMOVE",
@@ -68,8 +68,8 @@
     ],
     "billAdvance": "REMOVE",
     "orgId": {
-        "orgId": "KEEP - FLATTEN",
-        "orgFullName": "REMOVE"
+        "orgId": "KEEP",
+        "orgFullName": "IGNORE"
     },
     "webhookId": "IGNORE"
 }
