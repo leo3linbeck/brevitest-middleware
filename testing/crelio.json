@@ -1,0 +1,176 @@
+{
+    "apiKey": "",
+    "orderNumber": "",
+    "dueAmount": 2243,
+    "Patient Name": "Manoj Pawar",
+    "billConcession": 0,
+    "labPatientId": "",
+    "country_code": "91",
+    "patient_email": "",
+    "Patient Contact": "9878987678",
+    "billReferral": "SELF",
+    "apiUser": "",
+    "labId": {
+        "labId": 1008,
+        "labName": "Demolivehealth"
+    },
+    "billTotalAmount": 2243,
+    "billId": 13075,
+    "Patient Alternate Contact": "",
+    "Patient Dob": "-",
+    "Status": "Bill Generate",
+    "Mobile Number": "9878987678",
+    "Patient gender": "Male",
+    "billTime": "2021-03-31T13:12:52Z",
+    "Patient Age": "27 years",
+    "Patient Id": 8537,
+    "billInfoDetails": [
+        {
+            "testConsc": 0,
+            "testname": "CBC-Pooja",
+            "testRefundFlag": 0,
+            "testId": 3202979,
+            "isTestofProfile": 0,
+            "testQuantity": 1
+        },
+        {
+            "testConsc": 0,
+            "testname": "LIPID PROFILE - KESHAV",
+            "testRefundFlag": 0,
+            "testId": 760976,
+            "isTestofProfile": 0,
+            "testQuantity": 1
+        },
+        {
+            "testConsc": 0,
+            "testname": "Magnesium - Serum ",
+            "testRefundFlag": 0,
+            "testId": 1597198,
+            "isTestofProfile": 0,
+            "testQuantity": 1
+        }
+    ],
+    "currency": "INR",
+    "labReportDetails": [
+        {
+            "reportDate": "2021-03-31T13:12:52Z",
+            "labReportIndex": 25353,
+            "sampleDate": "2021-03-31T13:12:52Z",
+            "labId": {
+                "labName": "Demolivehealth",
+                "labId": 1008
+            },
+            "orgId": {
+                "orgId": 18775,
+                "orgFullName": "DIRECT"
+            },
+            "reportID": {
+                "testAmount": "1000",
+                "testCode": "CBC-Pooja",
+                "sampleId": {
+                    "type": "EDTA",
+                    "name": "EDTA"
+                },
+                "dictionaryId": null,
+                "testID": 3202979,
+                "integrationCode": "",
+                "testName": "CBC-Pooja"
+            },
+            "labReportId": 104312824,
+            "collectedSampleId": {
+                "collectionTime": "2021-03-31T13:12:52Z",
+                "accessionNo": "19798",
+                "toBatchProcessing": 0,
+                "lastUpdated": "2021-03-31T13:12:52Z",
+                "batchId": null,
+                "isRejected": 0,
+                "comments": "",
+                "dismissed": 0,
+                "redraw": 0,
+                "id": 43449847
+            }
+        },
+        {
+            "reportDate": "2021-03-31T13:12:52Z",
+            "labReportIndex": 25354,
+            "sampleDate": "2021-03-31T13:12:52Z",
+            "labId": {
+                "labName": "Demolivehealth",
+                "labId": 1008
+            },
+            "orgId": {
+                "orgId": 18775,
+                "orgFullName": "DIRECT"
+            },
+            "reportID": {
+                "testAmount": "847",
+                "testCode": "LIPID PROFILE - KESHAV",
+                "sampleId": {
+                    "type": "Serum",
+                    "name": "Serum"
+                },
+                "dictionaryId": 315,
+                "testID": 760976,
+                "integrationCode": "",
+                "testName": "LIPID PROFILE - KESHAV"
+            },
+            "labReportId": 104312825,
+            "collectedSampleId": {
+                "collectionTime": "2021-03-31T13:12:52Z",
+                "accessionNo": "19799",
+                "toBatchProcessing": 0,
+                "lastUpdated": "2021-03-31T13:12:52Z",
+                "batchId": null,
+                "isRejected": 0,
+                "comments": "",
+                "dismissed": 0,
+                "redraw": 0,
+                "id": 43449848
+            }
+        },
+        {
+            "reportDate": "2021-03-31T13:12:52Z",
+            "labReportIndex": 25355,
+            "sampleDate": "2021-03-31T13:12:52Z",
+            "labId": {
+                "labName": "Demolivehealth",
+                "labId": 1008
+            },
+            "orgId": {
+                "orgId": 18775,
+                "orgFullName": "DIRECT"
+            },
+            "reportID": {
+                "testAmount": "396",
+                "testCode": "Magnesium - Serum 0264",
+                "sampleId": {
+                    "type": "Serum",
+                    "name": "Serum"
+                },
+                "dictionaryId": 977,
+                "testID": 1597198,
+                "integrationCode": null,
+                "testName": "Magnesium - Serum "
+            },
+            "labReportId": 104312826,
+            "collectedSampleId": {
+                "collectionTime": "2021-03-31T13:12:52Z",
+                "accessionNo": "19799",
+                "toBatchProcessing": 0,
+                "lastUpdated": "2021-03-31T13:12:52Z",
+                "batchId": null,
+                "isRejected": 0,
+                "comments": "",
+                "dismissed": 0,
+                "redraw": 0,
+                "id": 43449848
+            }
+        }
+    ],
+    "billAdvance": 0,
+    "orgId": {
+        "orgId": 18775,
+        "orgFullName": "DIRECT"
+    },
+    "webhookId": 1
+}

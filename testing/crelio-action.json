@@ -1,0 +1,75 @@
+{
+    "apiKey": "KEEP",
+    "orderNumber": "IGNORE",
+    "dueAmount": "REMOVE",
+    "Patient Name": "REMOVE",
+    "billConcession": "REMOVE",
+    "labPatientId": "IGNORE",
+    "country_code": "IGNORE",
+    "patient_email": "REMOVE",
+    "Patient Contact": "REMOVE",
+    "billReferral": "REMOVE",
+    "apiUser": "KEEP",
+    "labId": {
+        "labId": "KEEP - FLATTEN",
+        "labName": "REMOVE"
+    },
+    "billTotalAmount": "REMOVE",
+    "billId": "REMOVE",
+    "Patient Alternate Contact": "REMOVE",
+    "Patient Dob": "KEEP",
+    "Status": "KEEP",
+    "Mobile Number": "REMOVE",
+    "Patient gender": "REMOVE",
+    "billTime": "REMOVE",
+    "Patient Age": "REMOVE",
+    "Patient Id": "KEEP",
+    "billInfoDetails": "REMOVE",
+    "currency": "IGNORE",
+    "labReportDetails": [
+        {
+            "reportDate": "KEEP",
+            "labReportIndex": "KEEP",
+            "sampleDate": "KEEP",
+            "labId": {
+                "labName": "REMOVE",
+                "labId": "KEEP - FLATTEN"
+            },
+            "orgId": {
+                "orgId": "KEEP - FLATTEN",
+                "orgFullName": "REMOVE"
+            },
+            "reportID": {
+                "testAmount": "REMOVE",
+                "testCode": "KEEP",
+                "sampleId": {
+                    "type": "IGNORE",
+                    "name": "IGNORE"
+                },
+                "dictionaryId": "IGNORE",
+                "testID": "KEEP",
+                "integrationCode": "IGNORE",
+                "testName": "KEEP"
+            },
+            "labReportId": "KEEP",
+            "collectedSampleId": {
+                "collectionTime": "KEEP",
+                "accessionNo": "KEEP",
+                "toBatchProcessing": "IGNORE",
+                "lastUpdated": "IGNORE",
+                "batchId": "IGNORE",
+                "isRejected": "IGNORE",
+                "comments": "KEEP",
+                "dismissed": "IGNORE",
+                "redraw": "IGNORE",
+                "id": "KEEP"
+            }
+        }
+    ],
+    "billAdvance": "REMOVE",
+    "orgId": {
+        "orgId": "KEEP - FLATTEN",
+        "orgFullName": "REMOVE"
+    },
+    "webhookId": "IGNORE"
+}
