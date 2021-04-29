@@ -2,9 +2,10 @@
     "apiKey": "static, provided by Brevitest to Crelio",
     "apiUser": "static, provided by Brevitest to Crelio",
     "Patient Id": "assigned by Crelio",
+    "billId": "assigned by Crelio, unique to each order placed",
     "labReportDetails": [
         {
-            "labReportId": "assigned and provided by Crelio could be 'labReportIndex' - just need a unique ID for a lab report",
+            "labReportId": "assigned and provided by Crelio unique to each test ordered",
             "sampleDate": "provided by Crelio",
             "reportID": {
                 "testCode": "Brevitest assigned 8-digit uppercase Hex number, starting with 'A', configured in Crelio",
@@ -20,9 +21,3 @@
         }
     ]
 }
-
-// NOTES
-//
-// 'labReportId', 'labReportIndex', and 'reportID.testId' all appear to be unique identifiers. Can we just pick one?
-// 'collectedSampleId.id' and 'collectedSampleId.accessionNo' both appear to be unique identifiers. Can we just pick one?
-//
