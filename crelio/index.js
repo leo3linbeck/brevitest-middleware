@@ -61,7 +61,7 @@ const parseData = (data) => {
                 schema: 'sample',
                 status: 'unused',
                 type: 'clinical',
-                sampleId: test.accessionNo,
+                accessionNumber: test.accessionNo,
                 requisitionNumber: data.billId,
                 takenOn: test.sampleDate,
                 matrix: test.sampleType,
