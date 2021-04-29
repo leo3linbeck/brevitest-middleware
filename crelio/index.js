@@ -134,31 +134,58 @@ const send_response = (callback, data) => {
 	callback(null, response);
 };
 
-exports.handler = (event, context, callback) => {
+const send_error = (callback, error) => {
+	write_log(null, 'crelio-test', 'FAILURE', error);
+	callback(error);
+};
+
+const process_event = (event) => {
     const body = JSON.parse(event.body);
     const labReportDetails = body.labReportDetails.map((report) => {
+        if (!report.testId) {
+            throw new Error(`Test ID is missing!`);
+        }
+        if (!report.accessionNo) {
+            throw new Error(`Sample accession number is missing}!`);
+        }
+        if (!report.testCode) {
+            throw new Error(`Test code is missing for test ID ${report.testId}!`);
+        }
+        if (!report.sampleId.type) {
+            throw new Error(`Sample type is missing for sample ${report.accessionNo}!`);
+        }
         return {
-            labReportId: report.labReportId.toString(),
-            reportDate: report.reportDate,
-            sampleDate: report.sampleDate,
+            labReportId: report.labReportId ? report.labReportId.toString() : null,
+            reportDate: report.reportDate || null,
+            sampleDate: report.sampleDate || null,
             testCode: report.testCode,
             testId: report.testID,
-            testName: report.testName,
+            testName: report.testName || null,
             sampleType: report.sampleId.type,
             accessionNo: report.accessionNo,
-            sampleComments: report.sampleComments
+            sampleComments: report.sampleComments || null
         };
     });
-    const data = {
-        apiKey: body.apiKey,
-        apiUser: body.apiUser,
-        patientId: body['patient ID'],
+    if (!body.billId) {
+        throw new Error(`Order is missing bill ID number!`);
+    }
+    return {
+        apiKey: body.apiKey || null,
+        apiUser: body.apiUser || null,
+        patientId: body['patient ID'] || null,
         billId: body.billId.toString(),
         labReportDetails
     };
-    
-    const docs = parseData(data);
-    saveMultipleDocs([...docs.orders, ...docs.samples]);
-    
-    send_response(callback, docs);
+};
+
+exports.handler = (event, context, callback) => {
+    try {
+        const data = process_event(event);
+        const docs = parseData(data);
+        saveMultipleDocs([...docs.orders, ...docs.samples])
+            .then(() => send_response(callback, docs))
+            .catch((e) => send_error(callback, e));
+    } catch (error) {
+        send_error(callback, error);
+    }
 };
