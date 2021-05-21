@@ -93,6 +93,7 @@ const parseData = (data) => {
 };
 
 const write_log = (deviceId, event_type, status, data) => {
+    console.log('write_log');
 	const loggedOn = new Date();
 	const _id = 'log_' + loggedOn.toISOString();
     const log_entry = {
@@ -105,15 +106,7 @@ const write_log = (deviceId, event_type, status, data) => {
         data
     };
 
-	saveDocument(log_entry)
-        .then((response) => {
-            if (!response || response.status > 202) {
-                throw new Error(`Log entry not saved`);
-            }
-        })
-        .catch((error) => {
-            console.error('Log entry save error', error);
-        });
+	return saveDocument(log_entry);
 };
 
 const send_response = (callback, data) => {
@@ -127,32 +120,44 @@ const send_response = (callback, data) => {
     	"isBase64Encoded": false
     };
 
-	write_log(null, 'crelio-request', 'SUCCESS', data);
-    const responseData = typeof data === 'object' ? JSON.stringify(data) : data;
-    response.body = `crelio-request{ITEM_DELIM}SUCCESS${ITEM_DELIM}${responseData}${END_DELIM}`;
+	write_log(null, 'crelio-request', 'SUCCESS', data)
+	    .then(() => {
+            const responseData = typeof data === 'object' ? JSON.stringify(data) : data;
+            response.body = `crelio-request{ITEM_DELIM}SUCCESS${ITEM_DELIM}${responseData}${END_DELIM}`;
+        
+        	callback(null, response);
+        })
+        .catch((error) => {
+            console.error('Log entry save error', error);
+        });
 
-	callback(null, response);
 };
 
 const send_error = (callback, error) => {
-	write_log(null, 'crelio-request', 'FAILURE', error);
-	callback(error);
+    console.log('send_error', error);
+	write_log(null, 'crelio-request', 'FAILURE', error)
+	    .then((response) => {
+	        callback(error);
+        })
+        .catch((error) => {
+            console.error('Log entry save error', error);
+        });
 };
 
-const process_event = (event) => {
+const process_event = (event, callback) => {
     const body = JSON.parse(event.body);
     const labReportDetails = body.labReportDetails.map((report) => {
         if (!report.testId) {
-            throw new Error(`Test ID is missing!`);
+            send_error(callback, `Test ID is missing!`);
         }
         if (!report.accessionNo) {
-            throw new Error(`Sample accession number is missing}!`);
+            send_error(callback, `Sample accession number is missing!`);
         }
         if (!report.testCode) {
-            throw new Error(`Test code is missing for test ID ${report.testId}!`);
+            send_error(callback, `Test code is missing for test ID ${report.testId}!`);
         }
         if (!report.sampleId.type) {
-            throw new Error(`Sample type is missing for sample ${report.accessionNo}!`);
+            send_error(callback, `Sample type is missing for sample ${report.accessionNo}!`);
         }
         return {
             labReportId: report.labReportId ? report.labReportId.toString() : null,
@@ -167,7 +172,7 @@ const process_event = (event) => {
         };
     });
     if (!body.billId) {
-        throw new Error(`Order is missing bill ID number!`);
+        send_error(callback, `Order is missing bill ID number!!`);
     }
     return {
         apiKey: body.apiKey || null,
@@ -179,13 +184,9 @@ const process_event = (event) => {
 };
 
 exports.handler = (event, context, callback) => {
-    try {
-        const data = process_event(event);
-        const docs = parseData(data);
-        saveMultipleDocs([...docs.orders, ...docs.samples])
-            .then(() => send_response(callback, docs))
-            .catch((e) => send_error(callback, e));
-    } catch (error) {
-        send_error(callback, error);
-    }
+    const data = process_event(event, callback);
+    const docs = parseData(data);
+    saveMultipleDocs([...docs.orders, ...docs.samples])
+        .then(() => send_response(callback, docs))
+        .catch((e) => send_error(callback, e));
 };
