@@ -129,6 +129,16 @@ const bcodeCommands = [{
 	params: ['param','led_power'],
 	description: 'Read sensors with input parameters.'
 }, {
+	num: '12',
+	name: 'Set Baseline and Read Sensors',
+	params: ['number_of_readings'],
+	description: 'Set LED power baselines and read sensors a specified number of times.'
+}, {
+	num: '13',
+	name: 'Read Sensors With Baseline',
+	params: ['number_of_readings'],
+	description: 'Read sensors a specified number of times.'
+}, {
 	num: '20',
 	name: 'Repeat',
 	params: ['count'],
@@ -163,6 +173,9 @@ const instructionTime = (command, params) => {
         case 'Read Sensors': // read Sensors
         case 'Read Sensors With Parameters':
             return 2000;
+        case 'Set Baseline and Read Sensors': // read Sensors
+        case 'Read Sensors With Baseline':
+            return 2000 * parseInt(params.number_of_readings, 10);
         case 'Start Test': // startup sequence
             return 9000;
         case 'Finish Test': // cleanup sequence
@@ -368,8 +381,8 @@ const validate_cartridge = (callback, deviceId, barcode) => {
                     throw new Error(`Cartridge ${cartridge._id} is not linked to an order`);
                 // } else if (((new Date() -  new Date(cartridge.linkDate)) / 1000) > 1800) {
                 //     throw new Error(`Cartridge ${cartridge._id} cannot be used because it has been more than 30 minutes since it was linked`);
-                } else if (!cartridge.orderId) {
-                    throw new Error(`Cartridge ${cartridge._id} is missing an order number`);
+                // } else if (!cartridge.orderId) {
+                //     throw new Error(`Cartridge ${cartridge._id} is missing an order number`);
                 } else if (!cartridge.siteId) {
                     throw new Error(`Cartridge ${cartridge._id} is not assigned to a site`);
                 } else if (cartridge._id.length === 36 && !cartridge.serialNumber) {
