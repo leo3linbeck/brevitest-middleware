@@ -129,6 +129,16 @@ const bcodeCommands = [{
 	params: ['param','led_power'],
 	description: 'Read sensors with input parameters.'
 }, {
+	num: '12',
+	name: 'Set Baseline and Read Sensors',
+	params: ['number_of_readings'],
+	description: 'Set LED power baselines and read sensors a specified number of times.'
+}, {
+	num: '13',
+	name: 'Read Sensors With Baseline',
+	params: ['number_of_readings'],
+	description: 'Read sensors a specified number of times.'
+}, {
 	num: '20',
 	name: 'Repeat',
 	params: ['count'],
@@ -163,6 +173,9 @@ const instructionTime = (command, params) => {
         case 'Read Sensors': // read Sensors
         case 'Read Sensors With Parameters':
             return 2000;
+        case 'Set Baseline and Read Sensors': // read Sensors
+        case 'Read Sensors With Baseline':
+            return 2000 * parseInt(params.number_of_readings, 10);
         case 'Start Test': // startup sequence
             return 9000;
         case 'Finish Test': // cleanup sequence
@@ -368,8 +381,8 @@ const validate_cartridge = (callback, deviceId, barcode) => {
                     throw new Error(`Cartridge ${cartridge._id} is not linked to an order`);
                 // } else if (((new Date() -  new Date(cartridge.linkDate)) / 1000) > 1800) {
                 //     throw new Error(`Cartridge ${cartridge._id} cannot be used because it has been more than 30 minutes since it was linked`);
-                } else if (!cartridge.orderId) {
-                    throw new Error(`Cartridge ${cartridge._id} is missing an order number`);
+                // } else if (!cartridge.orderId) {
+                //     throw new Error(`Cartridge ${cartridge._id} is missing an order number`);
                 } else if (!cartridge.siteId) {
                     throw new Error(`Cartridge ${cartridge._id} is not assigned to a site`);
                 } else if (cartridge._id.length === 36 && !cartridge.serialNumber) {
@@ -637,17 +650,17 @@ const device_validated = (validation) => {
         }, true);
         validated = validated && validation.magnetometer.valid;
     }
-    if (validation.color201 && Object.keys(validation.color201).length) {
-        validation.color201.valid = within_bounds(validation.color201.data, process.env.OPTICS_201_MAX, process.env.OPTICS_201_MIN);
-        validated = validated && validation.color201.valid;
+    if (validation.color0000 && Object.keys(validation.color0000).length) {
+        validation.color0000.valid = within_bounds(validation.color0000.data, process.env.OPTICS_0000_MAX, process.env.OPTICS_0000_MIN);
+        validated = validated && validation.color0000.valid;
     }
-    if (validation.color202 && Object.keys(validation.color202).length) {
-        validation.color202.valid = within_bounds(validation.color202.data, process.env.OPTICS_202_MAX, process.env.OPTICS_202_MIN);
-        validated = validated && validation.color202.valid;
+    if (validation.color0202 && Object.keys(validation.color0202).length) {
+        validation.color0202.valid = within_bounds(validation.color0202.data, process.env.OPTICS_0202_MAX, process.env.OPTICS_0202_MIN);
+        validated = validated && validation.color0202.valid;
     }
-    if (validation.color203 && Object.keys(validation.color203).length) {
-        validation.color203.valid = within_bounds(validation.color203.data, process.env.OPTICS_203_MAX, process.env.OPTICS_203_MIN);
-        validated = validated && validation.color203.valid;
+    if (validation.color0218 && Object.keys(validation.color0218).length) {
+        validation.color0218.valid = within_bounds(validation.color0218.data, process.env.OPTICS_0218_MAX, process.env.OPTICS_0218_MIN);
+        validated = validated && validation.color0218.valid;
     }
     console.log('validated', validation, validated);
     return validated;
@@ -660,19 +673,19 @@ const update_validation = (callback, eventName, deviceId, magnetometer, color) =
         .then ((response) => {
             const validation = response.data.validation || {
                     magnetometer: {},
-                    color201: {},
-                    color202: {},
-                    color203: {}
+                    color0000: {},
+                    color0202: {},
+                    color0218: {}
                 };
             
             if (magnetometer) {
                 validation.magnetometer = { ...magnetometer, validationDate };
-            } else if (color.n0201) {
-                validation.color201 = { ...color.n0201, validationDate };
+            } else if (color.n0000) {
+                validation.color0000 = { ...color.n0000, validationDate };
             } else if (color.n0202) {
-                validation.color202 = { ...color.n0202, validationDate };
-            } else if (color.n0203) {
-                validation.color203 = { ...color.n0203, validationDate };
+                validation.color0202 = { ...color.n0202, validationDate };
+            } else if (color.n0218) {
+                validation.color0218 = { ...color.n0218, validationDate };
             }
             validated = device_validated(validation);
             const device = {
