@@ -17,7 +17,9 @@ const saveDocument = (doc) => {
     const config = {
         validateStatus: putStatus
     };
-    return axios.put(`/${doc._id}`, { ...doc }, config);
+    return axios.put(`/${doc._id}`, { ...doc }, config).then((response) => {
+        return { ...doc, _rev: response.data.rev }
+    });
 };
 
 const getDocument = (docId) => {
@@ -95,90 +97,104 @@ const getMultipleDocuments = (keys) => {
 
 const bcodeCommands = [{
 	num: '0',
-	name: 'Start Test',
+	name: 'START TEST',
 	params: [],
 	description: 'Starts the test. Required to be the first command. Test executes until Finish Test command.'
 }, {
 	num: '1',
-	name: 'Delay',
+	name: 'DELAY',
 	params: ['delay_ms'],
 	description: 'Waits for specified number of milliseconds.'
 }, {
 	num: '2',
-	name: 'Move Microns',
+	name: 'MOVE MICRONS',
 	params: ['microns', 'step_delay_us'],
 	description: 'Moves the stage a specified number of microns at a specified speed expressed as a step delay in microseconds.'
 }, {
 	num: '3',
-	name: 'Oscillate Stage',
+	name: 'OSCILLATE STAGE',
 	params: ['microns', 'step_delay_us', 'cycles'],
 	description: 'Oscillates back and forth a given distance at a specified speed expressed as a step delay in microseconds.'
 }, {
 	num: '4',
-	name: 'Buzz',
+	name: 'BUZZ',
 	params: ['duration_ms', 'frequency'],
 	description: 'Turns on the buzzer for a specified number of milliseconds at a specified frequency.'
 }, {
 	num: '10',
-	name: 'Read Sensors',
+	name: 'READ SENSORS',
 	params: [],
 	description: 'Takes readings from the sensors.'
 }, {
 	num: '11',
-	name: 'Read Sensors With Parameters',
+	name: 'READ SENSORS WITH PARAMETERS',
 	params: ['param','led_power'],
 	description: 'Read sensors with input parameters.'
 }, {
 	num: '12',
-	name: 'Set Baseline and Read Sensors',
+	name: 'SET BASELINE AND READ SENSORS',
 	params: ['number_of_readings'],
 	description: 'Set LED power baselines and read sensors a specified number of times.'
 }, {
 	num: '13',
-	name: 'Read Sensors With Baseline',
+	name: 'READ SENSORS WITH BASELINE',
 	params: ['number_of_readings'],
 	description: 'Read sensors a specified number of times.'
 }, {
+	num: '13',
+	name: 'READ SENSOR MULTIPLE TIMES',
+	params: ['number_of_readings'],
+	description: 'Read sensors a specified number of times.'
+}, {
+	num: '14',
+	name: 'READ SENSORS MULTIPLE TIMES WITH PAUSE',
+	params: ['number_of_readings', 'pause_ms'],
+	description: 'Read sensors a specified number of times with a pause between reads.'
+}, {
 	num: '20',
-	name: 'Repeat',
+	name: 'REPEAT',
 	params: ['count'],
 	description: 'Repeats the block of BCODE.'
 }, {
 	num: '98',
-    name: 'Comment',
+    name: 'COMMENT',
     params: ['text'],
     description: 'Comment - ignored by system.'
   }, {
 	num: '99',
-	name: 'Finish Test',
+	name: 'FINISH TEST',
 	params: [],
 	description: 'Finishes the test. Required to be the final command.'
 }];
 
-const getBcodeCommand = (cmd) => {
-	return bcodeCommands.find(e => e.name === cmd);
+const getBcodeCommand = (command) => {
+	return bcodeCommands.find(e => e.name === command);
 };
 
 const instructionTime = (command, params) => {
     // jscs:disable requireCamelCaseOrUpperCaseIdentifiers
 	switch (command) {
-        case 'Delay': // delay
+        case 'DELAY': // delay
             return parseInt(params.delay_ms, 10);
-        case 'Move Microns': // move microns
+        case 'MOVE MICRONS': // move microns
             return Math.floor(2 * Math.abs(parseInt(params.microns, 10)) * parseInt(params.step_delay_us, 10) / 25000);
-        case 'Oscillate Stage': // oscillate
+        case 'OSCILLATE STAGE': // oscillate
             return Math.floor(4 * parseInt(params.cycles, 10) * Math.abs(parseInt(params.microns, 10)) * parseInt(params.step_delay_us, 10) / 25000);
-        case 'Buzz': // buzz the buzzer
+        case 'BUZZ': // buzz the buzzer
             return parseInt(params.duration_ms, 10);
-        case 'Read Sensors': // read Sensors
-        case 'Read Sensors With Parameters':
-            return 2000;
-        case 'Set Baseline and Read Sensors': // read Sensors
-        case 'Read Sensors With Baseline':
-            return 2000 * parseInt(params.number_of_readings, 10);
-        case 'Start Test': // startup sequence
+        case 'READ SENSORS': // read Sensors
+        case 'READ SENSORS WITH PARAMETERS':
+            return 10000;
+        case 'SET BASELINE AND READ SENSORS': // read Sensors
+            return 5000 * parseInt(params.number_of_readings, 10) + 10000;
+        case 'READ SENSORS WITH BASELINE':
+        case 'READ SENSOR MULTIPLE TIMES':
+            return 5000 * parseInt(params.number_of_readings, 10);
+        case 'READ SENSORS MULTIPLE TIMES WITH PAUSE':
+            return (5000 + params.pause_ms) * parseInt(params.number_of_readings, 10);
+        case 'START TEST': // startup sequence
             return 9000;
-        case 'Finish Test': // cleanup sequence
+        case 'FINISH TEST': // cleanup sequence
             return 8000;
 	}
 	// jscs:enable requireCamelCaseOrUpperCaseIdentifiers
@@ -187,12 +203,13 @@ const instructionTime = (command, params) => {
 
 const bcodeDuration = (bcodeArray) => {
     const total_duration = bcodeArray.reduce((duration, bcode) => {
-            if (bcode.command === 'Repeat') {
-                return duration + bcodeDuration(bcode.code) * parseInt(bcode.count, 10);
-            } else {
-                return duration + instructionTime(bcode.command, bcode.params);
-            }
-        }, 0);
+        const cmd = bcode.command.toUpperCase();
+        if (cmd === 'REPEAT') {
+            return duration + bcodeDuration(bcode.code) * parseInt(bcode.count, 10);
+        } else {
+            return duration + instructionTime(cmd, bcode.params);
+        }
+    }, 0);
 
     return parseInt(total_duration, 10);
 };
@@ -200,7 +217,7 @@ const bcodeDuration = (bcodeArray) => {
 const compileInstruction = (cmd, args) => {
     const command = getBcodeCommand(cmd);
     const keys = Object.keys(args);
-	const argKeys = keys.length ? keys.filter(k => k !== 'comment') : [];  // remove comments
+	const argKeys = keys.length ? keys.filter(k => k.toLowerCase() !== 'comment') : [];  // remove comments
 	if (command.params.length !== argKeys.length) {
 		throw new Error(`Parameter count mismatch, command: ${cmd} should have ${command.params.length}, has ${argKeys.length}`);
     }
@@ -221,12 +238,13 @@ const compileRepeatEnd = () => {
 
 const bcodeCompile = (bcodeArray) => {
     return bcodeArray.reduce((compiledCode, bcode) => {
-        if (bcode.command === 'Comment') {
+        const cmd = bcode.command.toUpperCase();
+        if (cmd === 'COMMENT') {
             return compiledCode;
-        } else if (bcode.command === 'Repeat') {
+        } else if (cmd === 'REPEAT') {
             return compiledCode + compileRepeatBegin(bcode.count) + bcodeCompile(bcode.code) + compileRepeatEnd();
         } else {
-            return compiledCode + compileInstruction(bcode.command, bcode.params);
+            return compiledCode + compileInstruction(cmd, bcode.params);
         }
     }, '');
 };
@@ -308,7 +326,7 @@ const checksum = (str) => {
 };
 
 const generateResponseString = (serialNumber, code) => {
-    const bcodeVersion = 2;
+    const bcodeVersion = 3;
     const compiledBCODE =  bcodeCompile(code);
     const duration = parseInt(bcodeDuration(code) / 1000, 10);
     const result = [
@@ -354,7 +372,6 @@ const verify_device = (callback, coreId, deviceId) => {
 const loadCartridge = (barcode) => {
     return documentExists(barcode)
         .then((response) => {
-            console.log(response.status);
             if (response.status == 200) {
                 return response.data;
             } else {
@@ -378,7 +395,9 @@ const validate_cartridge = (callback, deviceId, barcode) => {
                 } else if (cartridge.used) {
                     throw new Error(`Cartridge ${cartridge._id} already used`);
                 } else if (cartridge.status !== 'linked') {
-                    throw new Error(`Cartridge ${cartridge._id} is not linked to an order`);
+                    throw new Error(`Cartridge ${cartridge._id} is not linked to a sample`);
+                } else if (cartridge.sample && cartridge.sample.type === 'clinical' && !cartridge.order) {
+                    throw new Error(`Cartridge ${cartridge._id} is a clinical test but is not linked to an order`);
                 // } else if (((new Date() -  new Date(cartridge.linkDate)) / 1000) > 1800) {
                 //     throw new Error(`Cartridge ${cartridge._id} cannot be used because it has been more than 30 minutes since it was linked`);
                 // } else if (!cartridge.orderId) {
@@ -420,23 +439,27 @@ const test_start = (callback, deviceId, serialNumber) => {
         throw new Error(`FAILURE: Cartridge ID is missing.`);
     }
 
-    let cartridge = null
+    let cartridge = null;
     getCartridgeWithSerialNumber(serialNumber)
         .then((c) => {
-            cartridge = c
+            cartridge = c;
             const assayId = cartridge._id.length === 24 ? cartridge._id.slice(0, 8) : cartridge.serialNumber.slice(0, 8);
             return getMultipleDocuments([deviceId, assayId]);
         })
         .then (([device, assay]) => {
+            const when = new Date().toISOString().slice(0, 19);
+            const who = 'brevitest-cloud';
+            const where = device.location;
             cartridge.device = device;
             cartridge.assay = assay;
             cartridge.assay.duration = parseInt(bcodeDuration(assay.BCODE.code) / 1000, 10);
             cartridge.status = 'underway';
             cartridge.used = true;
-            cartridge.testStartedOn = new Date();
+            cartridge.checkpoints.underway = { when, who, where };
+            cartridge.statusUpdatedOn = when;
             return saveDocument(cartridge);
         })
-        .then((response) => {
+        .then((doc) => {
             send_response(callback, deviceId, 'start-test', 'SUCCESS', serialNumber);
         })
         .catch((error) => {
@@ -466,12 +489,14 @@ const parseReading = (reading) => {
 };
 
 const parseData = (payload) => {
-    if (payload[1] === 'A' || payload[1] === 'B') {
+    const version = payload[1];
+    if (version === 'A' || version === 'B') {
         if (payload[2] === '0') { // test cancelled
             return { cartridgeId: payload[0], numberOfReadings: 0, readings: [] };
         } else {
             const readings = payload[2].split(ATTR_DELIM).map(reading => parseReading(reading));
             return {
+                version,
                 cartridgeId: payload[0],
                 numberOfReadings: readings.length,
                 readings
@@ -492,15 +517,6 @@ const magnitude = (v) => {
     return Math.round((1000 * hypotenuse(v)) / sqrt3);
 };
 
-const readoutValue = (baseline, final) => {
-    const ratio = {
-        x: final.x ? baseline.x / final.x : 0,
-        y: final.y ? baseline.y / final.y : 0,
-        z: final.z ? baseline.z / final.z : 0
-    };
-    return magnitude(ratio);
-};
-
 const avgReadings = (readings, indexes) => {
     const count = indexes.length;
     const sum = indexes.reduce(
@@ -516,52 +532,134 @@ const avgReadings = (readings, indexes) => {
     return { x: sum.x / count, y: sum.y / count, z: sum.z / count };
 };
 
-const validateReadings = (readings, readouts, assay) => {
+const validateRawData = ({ version, readings }, cartridge) => {
     const validation = [];
-    readings.slice(0, 6).forEach((reading, index) => {
+    if (!readings) {
+        validation.push('No optical readings');
+    } 
+    if (!cartridge.assay.analysis) {
+        validation.push('Missing analysis section of assay definition');
+    }
+    if ((version === 'A' || version === 'B') && readings.length !== 15) {
+        validation.push(`Wrong number of optical readings: 15 expected, ${readings.length} found`);
+    }                
+    readings.forEach((reading, index) => {
         if (reading.L < process.env.OPTICS_L_MIN) {
             validation.push(`reading ${index} too low (${reading.L.toFixed(1)} < ${process.env.OPTICS_L_MIN})`);
         } else if (reading.L > process.env.OPTICS_L_MAX) {
             validation.push(`reading ${index} too high (${reading.L.toFixed(1)} > ${process.env.OPTICS_L_MAX})`);
         }
     });
-    if (readouts.control0 > assay.analysis.controlLow.max) {
-        validation.push(`control0 too high (${readouts.control0.toFixed(1)} > ${assay.analysis.controlLow.max.toFixed(1)})`);
-    }
-    if (readouts.control0 < assay.analysis.controlLow.min) {
-        validation.push(`control0 too low (${readouts.control0.toFixed(1)} < ${assay.analysis.controlLow.min.toFixed(1)}`);
-    }
-    if (readouts.controlHigh > assay.analysis.controlHigh.max) {
-        validation.push(`controlHigh too high (${readouts.controlHigh.toFixed(1)} > ${assay.analysis.controlHigh.max.toFixed(1)})`);
-    }
-    if (readouts.controlHigh < assay.analysis.controlHigh.min) {
-        validation.push(`controlHigh too low (${readouts.controlHigh.toFixed(1)} < ${assay.analysis.controlHigh.min.toFixed(1)})`);
-    }
-    const controlDelta = readouts.controlHigh - readouts.control0;
-    if (controlDelta > assay.analysis.controlDelta.max) {
-        validation.push(`(controlHigh - control0) too high (${controlDelta.toFixed(1)} > ${assay.analysis.controlDelta.max.toFixed(1)})`);
-    }
-    if (controlDelta < assay.analysis.controlDelta.min) {
-        validation.push(`(controlHigh - control0) too low (${controlDelta.toFixed(1)} < ${assay.analysis.controlDelta.min.toFixed(1)})`);
-    }
-
-    return validation.length ? validation : false;
+    return validation;
 };
 
-const calculateReadouts = (readings, assay) => {
-    const sample = readoutValue(avgReadings(readings, [0, 3]), avgReadings(readings, [6, 9, 12]));
-    const control0 = readoutValue(avgReadings(readings, [1, 4]), avgReadings(readings, [7, 10, 13]));
-    const controlHigh = readoutValue(avgReadings(readings, [2, 5]), avgReadings(readings, [8, 11, 14]));
+const validateReadouts = ({ readouts, assay }) => {
+    const validation = [];
+    const analysis = assay.analysis;
+    if (readouts.sample === null) {
+        validation.push(`sample is null`);
+    }
+    if (readouts.control0 === null) {
+        validation.push(`control0 is null`);
+    } else if (analysis.controlLow) {
+        if (analysis.controlLow.max && readouts.control0 > analysis.controlLow.max) {
+            validation.push(`control0 too high (${readouts.control0.toFixed(1)} > ${analysis.controlLow.max.toFixed(1)})`);
+        }
+        if (analysis.controlLow.min && readouts.control0 < analysis.controlLow.min) {
+            validation.push(`control0 too low (${readouts.control0.toFixed(1)} < ${analysis.controlLow.min.toFixed(1)}`);
+        }
+    }
+    if (readouts.controlHigh === null) {
+        validation.push(`controlHigh is null`);
+    } else if (analysis.controlHigh) {
+        if (analysis.controlHigh.max && readouts.controlHigh > analysis.controlHigh.max) {
+            validation.push(`controlHigh too high (${readouts.controlHigh.toFixed(1)} > ${analysis.controlHigh.max.toFixed(1)})`);
+        }
+        if (analysis.controlHigh.min && readouts.controlHigh < analysis.controlHigh.min) {
+            validation.push(`controlHigh too low (${readouts.controlHigh.toFixed(1)} < ${analysis.controlHigh.min.toFixed(1)})`);
+        }
+    }
+    
+    if (analysis.controlDelta && readouts.control0 !== null && readouts.controlHigh !== null) {
+        const controlDelta = readouts.controlHigh - readouts.control0;
+        if (analysis.controlDelta.max && controlDelta > analysis.controlDelta.max) {
+            validation.push(`(controlHigh - control0) too high (${controlDelta.toFixed(1)} > ${analysis.controlDelta.max.toFixed(1)})`);
+        }
+        if (analysis.controlDelta.min && controlDelta < analysis.controlDelta.min) {
+            validation.push(`(controlHigh - control0) too low (${controlDelta.toFixed(1)} < ${analysis.controlDelta.min.toFixed(1)})`);
+        }
+    }
+
+    if (readouts.concentration === null) {
+        validation.push(`concentration is null`);
+    } else if (analysis.concentration) {
+        if (analysis.concentration.max && readouts.concentration > analysis.concentration.max) {
+            validation.push(`concentration too high (${readouts.concentration.toFixed(1)} > ${analysis.concentration.max.toFixed(1)})`);
+        }
+        if (analysis.concentration.min && readouts.concentration < analysis.concentration.min) {
+            validation.push(`concentration too low (${readouts.concentration.toFixed(1)} < ${analysis.concentration.min.toFixed(1)})`);
+        }
+    }
+    
+    return validation;
+};
+
+const readoutABValue = (baseline, final) => {
+    const ratio = {
+        x: final.x ? baseline.x / final.x : 0,
+        y: final.y ? baseline.y / final.y : 0,
+        z: final.z ? baseline.z / final.z : 0
+    };
+    return magnitude(ratio);
+};
+
+const getVersionABReadouts = (readings, assay) => {
+    const sample = readoutABValue(avgReadings(readings, [0, 3]), avgReadings(readings, [6, 9, 12]));
+    const control0 = readoutABValue(avgReadings(readings, [1, 4]), avgReadings(readings, [7, 10, 13]));
+    const controlHigh = readoutABValue(avgReadings(readings, [2, 5]), avgReadings(readings, [8, 11, 14]));
     const concentration = Number.parseFloat((assay.analysis.controlHighConcentration * (sample - control0) / (controlHigh - control0)).toFixed(1));
-    // console.log(sample, control0, controlHigh, concentration)
     return { sample, control0, controlHigh, concentration };
 };
 
-const calculateResult = (concentration, cutScores, invalid) => {
-    if (!cutScores) {
-        return 'Unknown';
-    } else if (invalid) {
+const readoutSlope = (baseline, f1, f2, f3, f4) => {
+    // const bline = magnitude(baseline);
+    const l1 = magnitude(f1);
+    const l2 = magnitude(f2);
+    const l3 = magnitude(f3);
+    const l4 = magnitude(f4);
+    const lmean = (l1 + l2 + l3 + l4) / 4;
+    return ((l1 - l4) / lmean);
+};
+
+const getVersionCReadouts = (readings, assay) => {
+    const sample = readoutSlope(readings[0], readings[3], readings[6], readings[9], readings[12]);
+    const control0 = readoutSlope(readings[1], readings[4], readings[7], readings[10], readings[13]);
+    const controlHigh = readoutSlope(readings[2], readings[5], readings[8], readings[11], readings[14]);
+    const concentration = Number.parseFloat((assay.analysis.controlHighConcentration * (sample - control0) / (controlHigh - control0)).toFixed(1));
+    return { sample, control0, controlHigh, concentration };
+};
+
+const calculateReadouts = ({ version, readings }, cartridge) => {
+    if (cartridge.validationErrors.length > 0) {
+        return { sample: null, control0: null, controlHigh: null, concentration: null };
+    } else {
+        if (version === 'A' || version === 'B') {
+            return getVersionABReadouts(readings, cartridge.assay);
+        } else if (version === 'C') {
+            return getVersionCReadouts(readings, cartridge.assay);
+        } else {
+            return { sample: null, control0: null, controlHigh: null, concentration: null };
+        }
+    }
+};
+
+const calculateResult = (cartridge) => {
+    const concentration = cartridge.readouts && cartridge.readouts.concentration;
+    const cutScores = cartridge.assay && cartridge.assay.analysis && cartridge.assay.analysis.cutScores;
+    if (cartridge.validationErrors.length > 0) {
         return 'Invalid';
+    } else if (!cutScores) {
+        return 'Unknown';
     } else if (typeof concentration !== 'number') {
         return 'Error';
     } else if (concentration > cutScores.redMax || concentration < cutScores.redMin) {
@@ -573,49 +671,44 @@ const calculateResult = (concentration, cutScores, invalid) => {
     }
 };
 
-const invalidResult = (cartridge, message) => {
-    cartridge.readouts = { sample: null, control0: null, controlHigh: null, concentration: null };
-    cartridge.validationErrors = [message];
-    cartridge.result = null;
-    return true;
-};
-
 const test_upload = (callback, deviceId, payload) => {
     const result = parseData(payload);
     if (!result.cartridgeId) {
         throw new Error(`FAILURE: Cartridge ID uploaded in device ${deviceId} is missing.`);
     }
 
-    let invalid_test = false;
     getCartridgeWithSerialNumber(result.cartridgeId)
         .then ((cartridge) => {
-            cartridge.testFinishedOn = new Date();
+            const when = new Date().toISOString().slice(0, 19);
+            const who = 'brevitest-cloud';
+            const where = cartridge.checkpoints.underway.location;
+            cartridge.statusUpdatedOn = when;
             if (result.numberOfReadings) {
                 cartridge.status = 'completed';
+                cartridge.checkpoints.completed = { when, who, where };
                 cartridge.rawData = result;
-                if (!result.readings) {
-                    invalid_test = invalidResult(cartridge,'No optical readings');
-                } else if (result.readings.length !== 15) {
-                    invalid_test = invalidResult(cartridge,`Wrong number of optical readings: 15 expected, ${result.readings.length} found`);
-                } else if (!cartridge.assay.analysis) {
-                    invalid_test = invalidResult(cartridge,'Missing analysis section of assay definition');
+                cartridge.calculationVersion = result.version;
+                cartridge.validationErrors = validateRawData(result, cartridge);
+                if (cartridge.validationErrors.length == 0) {
+                    cartridge.readouts = calculateReadouts(result, cartridge);
+                    cartridge.validationErrors = validateReadouts(cartridge);
+                    cartridge.result = calculateResult(cartridge);
                 } else {
-                    cartridge.readouts = calculateReadouts(result.readings, cartridge.assay);
-                    cartridge.validationErrors = validateReadings(result.readings, cartridge.readouts, cartridge.assay);
-                    invalid_test = !!cartridge.validationErrors;
-                    cartridge.result = calculateResult(cartridge.readouts.concentration, cartridge.assay.analysis.cutScores, invalid_test);
+                    cartridge.readouts = { sample: null, control0: null, controlHigh: null, concentration: null };
+                    cartridge.result = null;
                 }
             } else {
                 cartridge.status = 'cancelled';
+                cartridge.checkpoints.cancelled = { when, who, where };
                 cartridge.rawData = null;
-                cartridge.validationErrors = false;
+                cartridge.validationErrors = [];
                 cartridge.readouts = { sample: null, control0: null, controlHigh: null, concentration: null };
                 cartridge.result = null;
-                }
+            }
             return saveDocument(cartridge);
         })
-        .then((response) => {
-            if (invalid_test) {
+        .then((updatedCartridge) => {
+            if (updatedCartridge.validationErrors.length > 0) {
                 send_response(callback, deviceId, 'upload-test', 'INVALID', result.cartridgeId);
             } else {
                 send_response(callback, deviceId, 'upload-test', 'SUCCESS', result.cartridgeId);
@@ -638,11 +731,6 @@ const within_bounds = (readings, max, min) => {
 };
 
 const device_validated = (validation) => {
-    // const valid_magnetometer = magnetometer === null
-    //         ?   true
-    //         :   magnetometer.data.reduce((ok, well) => {
-    //                 return ok && (Math.abs(well.gauss_z) > process.env.MAGNET_MINIMUM_Z_GAUSS); 
-    //             }, true);
     let validated = true;
     if (validation.magnetometer) {
         validation.magnetometer.valid = validation.magnetometer.data.reduce((ok, well) => {
@@ -662,7 +750,6 @@ const device_validated = (validation) => {
         validation.color0218.valid = within_bounds(validation.color0218.data, process.env.OPTICS_0218_MAX, process.env.OPTICS_0218_MIN);
         validated = validated && validation.color0218.valid;
     }
-    console.log('validated', validation, validated);
     return validated;
 };
 
@@ -696,7 +783,6 @@ const update_validation = (callback, eventName, deviceId, magnetometer, color) =
             if (validated) {
                 device.lastValidatedOn = validationDate;
             }
-            console.log(device);
             return saveDocument(device);
         })
         .then(() => {
@@ -752,7 +838,6 @@ const validate_magnets = (callback, deviceId, payload) => {
 
 const validate_optics = (callback, deviceId, payload) => {
     const data = parseData(payload);
-    console.log('data', data);
     if (!data.cartridgeId) {
         send_response(callback, deviceId, 'validate-optics', 'FAILURE', 'Missing optical instrument code');
     }
