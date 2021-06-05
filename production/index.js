@@ -472,31 +472,51 @@ const test_start = (callback, deviceId, serialNumber) => {
         });
 };
 
-const parseReading = (reading) => {
+const parseReadingABFormat = (reading) => {
 	const args = reading.split(ARG_DELIM);
+    const channel = args[0];
     const x = parseInt(args[1], 16);
     const y = parseInt(args[2], 16);
     const z = parseInt(args[3], 16);
     const L = Math.round(Math.sqrt(x * x + y * y + z * z));
-    return {
-		channel: args[0],
-		x,
-		y,
-        z,
-        L,
-		temperature: parseInt(args[4], 16)
-	};
+    const temperature = parseInt(args[4], 16);
+    return { channel, x, y, z, L, temperature };
+};
+
+const parseReadingCFormat = (reading) => {
+	const args = reading.split(ARG_DELIM);
+    const channel = args[0];
+    const samples = parseInt(args[1], 16);
+    const time = parseInt(args[2], 16);
+    const x = parseInt(args[3], 16);
+    const y = parseInt(args[4], 16);
+    const z = parseInt(args[5], 16);
+    const L = Math.round(Math.sqrt(x * x + y * y + z * z));
+    const temperature = parseInt(args[6], 16);
+    return { channel, samples, time, x, y, z, L, temperature };
 };
 
 const parseData = (payload) => {
-    const version = payload[1];
-    if (version === 'A' || version === 'B') {
+    const dataFormat = payload[1];
+    if (dataFormat === 'A' || dataFormat === 'B') {
         if (payload[2] === '0') { // test cancelled
             return { cartridgeId: payload[0], numberOfReadings: 0, readings: [] };
         } else {
-            const readings = payload[2].split(ATTR_DELIM).map(reading => parseReading(reading));
+            const readings = payload[2].split(ATTR_DELIM).map(reading => parseReadingABFormat(reading));
             return {
-                version,
+                dataFormat,
+                cartridgeId: payload[0],
+                numberOfReadings: readings.length,
+                readings
+            };
+        }
+    } else if (dataFormat === 'C') {
+        if (payload[2] === '0') { // test cancelled
+            return { cartridgeId: payload[0], numberOfReadings: 0, readings: [] };
+        } else {
+            const readings = payload[2].split(ATTR_DELIM).map(reading => parseReadingCFormat(reading));
+            return {
+                dataFormat,
                 cartridgeId: payload[0],
                 numberOfReadings: readings.length,
                 readings
@@ -532,15 +552,16 @@ const avgReadings = (readings, indexes) => {
     return { x: sum.x / count, y: sum.y / count, z: sum.z / count };
 };
 
-const validateRawData = ({ version, readings }, cartridge) => {
+const validateRawData = (cartridge) => {
     const validation = [];
+    const readings = cartridge.rawData.readings;
     if (!readings) {
         validation.push('No optical readings');
     } 
     if (!cartridge.assay.analysis) {
         validation.push('Missing analysis section of assay definition');
     }
-    if ((version === 'A' || version === 'B') && readings.length !== 15) {
+    if (cartridge.assay && cartridge.assay.analysis && (cartridge.assay.analysis.expectedReadings !== readings.length)) {
         validation.push(`Wrong number of optical readings: 15 expected, ${readings.length} found`);
     }                
     readings.forEach((reading, index) => {
@@ -604,7 +625,7 @@ const validateReadouts = ({ readouts, assay }) => {
     return validation;
 };
 
-const readoutABValue = (baseline, final) => {
+const absorption = (baseline, final) => {
     const ratio = {
         x: final.x ? baseline.x / final.x : 0,
         y: final.y ? baseline.y / final.y : 0,
@@ -613,40 +634,57 @@ const readoutABValue = (baseline, final) => {
     return magnitude(ratio);
 };
 
-const getVersionABReadouts = (readings, assay) => {
-    const sample = readoutABValue(avgReadings(readings, [0, 3]), avgReadings(readings, [6, 9, 12]));
-    const control0 = readoutABValue(avgReadings(readings, [1, 4]), avgReadings(readings, [7, 10, 13]));
-    const controlHigh = readoutABValue(avgReadings(readings, [2, 5]), avgReadings(readings, [8, 11, 14]));
+const getLinearInterpolationReadouts = (readings, assay) => {
+    const sample = absorption(avgReadings(readings, [0, 3]), avgReadings(readings, [6, 9, 12]));
+    const control0 = absorption(avgReadings(readings, [1, 4]), avgReadings(readings, [7, 10, 13]));
+    const controlHigh = absorption(avgReadings(readings, [2, 5]), avgReadings(readings, [8, 11, 14]));
     const concentration = Number.parseFloat((assay.analysis.controlHighConcentration * (sample - control0) / (controlHigh - control0)).toFixed(1));
     return { sample, control0, controlHigh, concentration };
 };
 
-const readoutSlope = (baseline, f1, f2, f3, f4) => {
-    // const bline = magnitude(baseline);
-    const l1 = magnitude(f1);
-    const l2 = magnitude(f2);
-    const l3 = magnitude(f3);
-    const l4 = magnitude(f4);
-    const lmean = (l1 + l2 + l3 + l4) / 4;
-    return ((l1 - l4) / lmean);
+const accumSlope = (result, point, mean) => {
+    return {
+        num: result.num + (point.x - mean.x) * (point.y - mean.y),
+        denom: result.denom + (point.x - mean.x) * (point.x - mean.x)        
+    };
 };
 
-const getVersionCReadouts = (readings, assay) => {
-    const sample = readoutSlope(readings[0], readings[3], readings[6], readings[9], readings[12]);
-    const control0 = readoutSlope(readings[1], readings[4], readings[7], readings[10], readings[13]);
-    const controlHigh = readoutSlope(readings[2], readings[5], readings[8], readings[11], readings[14]);
+const readoutSlope = (readings, index) => {
+        // const bline = magnitude(baseline);
+    const pt = [];
+    const mean = { x: 0, y: 0 };
+    for (let i = 0; i < 4; i += 1) {
+        const r = readings[3 * i + index];
+        const p = { x: r.time / 1000, y: r.L };
+        mean.x += p.x;
+        mean.y += p.y;
+        pt.push(p);
+    }
+    mean.x /= 4;
+    mean.y /= 4;
+    const div = pt.reduce((result, point) => accumSlope(result, point, mean), { num: 0, denom: 0 });
+    const slope = -div.num / div.denom;
+    return Number.parseFloat(slope.toFixed(3));
+};
+
+const getLeastSquaresSlopeReadouts = (readings, assay) => {
+    const sample = readoutSlope(readings, 3);
+    const control0 = readoutSlope(readings, 4);
+    const controlHigh = readoutSlope(readings, 5);
     const concentration = Number.parseFloat((assay.analysis.controlHighConcentration * (sample - control0) / (controlHigh - control0)).toFixed(1));
     return { sample, control0, controlHigh, concentration };
 };
 
-const calculateReadouts = ({ version, readings }, cartridge) => {
+const calculateReadouts = (cartridge) => {
+    const readings = cartridge.rawData.readings;
+    const method = cartridge.assay && cartridge.assay.analysis && cartridge.assay.analysis.methodology;
     if (cartridge.validationErrors.length > 0) {
         return { sample: null, control0: null, controlHigh: null, concentration: null };
-    } else {
-        if (version === 'A' || version === 'B') {
-            return getVersionABReadouts(readings, cartridge.assay);
-        } else if (version === 'C') {
-            return getVersionCReadouts(readings, cartridge.assay);
+    } else if (method) {
+        if (method === 'linear interpolation') {
+            return getLinearInterpolationReadouts(readings, cartridge.assay);
+        } else if (method === 'least squares slope') {
+            return getLeastSquaresSlopeReadouts(readings, cartridge.assay);
         } else {
             return { sample: null, control0: null, controlHigh: null, concentration: null };
         }
@@ -687,10 +725,9 @@ const test_upload = (callback, deviceId, payload) => {
                 cartridge.status = 'completed';
                 cartridge.checkpoints.completed = { when, who, where };
                 cartridge.rawData = result;
-                cartridge.calculationVersion = result.version;
-                cartridge.validationErrors = validateRawData(result, cartridge);
+                cartridge.validationErrors = validateRawData(cartridge);
                 if (cartridge.validationErrors.length == 0) {
-                    cartridge.readouts = calculateReadouts(result, cartridge);
+                    cartridge.readouts = calculateReadouts(cartridge);
                     cartridge.validationErrors = validateReadouts(cartridge);
                     cartridge.result = calculateResult(cartridge);
                 } else {
