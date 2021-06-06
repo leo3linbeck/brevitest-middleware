@@ -151,6 +151,11 @@ const bcodeCommands = [{
 	params: ['number_of_readings', 'pause_ms'],
 	description: 'Read sensors a specified number of times with a pause between reads.'
 }, {
+	num: '15',
+	name: 'SET BASELINE TIME',
+	params: ['number_of_readings'],
+	description: 'Set time of baseline readings to current timestamp.'
+}, {
 	num: '20',
 	name: 'REPEAT',
 	params: ['count'],
@@ -192,6 +197,8 @@ const instructionTime = (command, params) => {
             return 5000 * parseInt(params.number_of_readings, 10);
         case 'READ SENSORS MULTIPLE TIMES WITH PAUSE':
             return (5000 + params.pause_ms) * parseInt(params.number_of_readings, 10);
+        case 'SET BASELINE TIME': // startup sequence
+            return 10;
         case 'START TEST': // startup sequence
             return 9000;
         case 'FINISH TEST': // cleanup sequence
@@ -561,8 +568,8 @@ const validateRawData = (cartridge) => {
     if (!cartridge.assay.analysis) {
         validation.push('Missing analysis section of assay definition');
     }
-    if (cartridge.assay && cartridge.assay.analysis && (cartridge.assay.analysis.expectedReadings !== readings.length)) {
-        validation.push(`Wrong number of optical readings: 15 expected, ${readings.length} found`);
+    if (cartridge.assay && cartridge.assay.analysis && (cartridge.assay.analysis.expectedNumberOfReadings !== readings.length)) {
+        validation.push(`Wrong number of optical readings: ${cartridge.assay.analysis.expectedNumberOfReadings} expected, ${readings.length} found`);
     }                
     readings.forEach((reading, index) => {
         if (reading.L < process.env.OPTICS_L_MIN) {
