@@ -507,32 +507,40 @@ const parseData = (payload) => {
     const dataFormat = payload[1];
     if (dataFormat === 'A' || dataFormat === 'B') {
         if (payload[2] === '0') { // test cancelled
-            return { cartridgeId: payload[0], numberOfReadings: 0, readings: [] };
+            return { cartridgeId: payload[0], numberOfPoints: 0, points: [] };
         } else {
-            const readings = payload[2].split(ATTR_DELIM).map(reading => parseReadingABFormat(reading));
+            const points = payload[2].split(ATTR_DELIM).map(reading => parseReadingABFormat(reading));
             return {
                 dataFormat,
                 cartridgeId: payload[0],
-                numberOfReadings: readings.length,
-                readings
+                numberOfPoints: points.length,
+                points
             };
         }
     } else if (dataFormat === 'C') {
         if (payload[2] === '0') { // test cancelled
-            return { cartridgeId: payload[0], numberOfReadings: 0, readings: [] };
+            return { cartridgeId: payload[0], numberOfPoints: 0, points: [] };
         } else {
-            const readings = payload[2].split(ATTR_DELIM).map(reading => parseReadingCFormat(reading));
+            const points = payload[2].split(ATTR_DELIM).map(reading => parseReadingCFormat(reading));
             return {
                 dataFormat,
                 cartridgeId: payload[0],
-                numberOfReadings: readings.length,
-                readings
+                numberOfPoints: points.length,
+                points
             };
         }
     } else {
-        return { cartridgeId: payload[0], numberOfReadings: 0, readings: [] };
+        return { cartridgeId: payload[0], numberOfPoints: 0, points: [] };
     }
 };
+
+////////////////////////////////////////////////////////////////////////////////////////
+//                                                                                    //
+//                                                                                    //
+//                          START CALCULATION SECTION                                 //
+//                                                                                    //
+//                                                                                    //
+////////////////////////////////////////////////////////////////////////////////////////
 
 const sqrt3 = Math.sqrt(3);
 
@@ -540,18 +548,32 @@ const hypotenuse = (v) => {
     return Math.sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
 };
 
-const magnitude = (v) => {
+const absorption = (v) => {
     return Math.round((1000 * hypotenuse(v)) / sqrt3);
 };
 
-const avgReadings = (readings, indexes) => {
+const avgPoints = (points) => {
+    const sum = points.reduce(
+        (total, point) => {
+            return {
+                x: total.x + point.x,
+                y: total.y + point.y,
+                z: total.z + point.z
+            };
+        },
+        { x: 0, y: 0, z: 0 }
+    );
+    return { x: sum.x / points.length, y: sum.y / points.length, z: sum.z / points.length };
+};
+
+const avgPointsIndexed = (points, indexes) => {
     const count = indexes.length;
     const sum = indexes.reduce(
         (total, index) => {
             return {
-                x: total.x + readings[index].x,
-                y: total.y + readings[index].y,
-                z: total.z + readings[index].z
+                x: total.x + points[index].x,
+                y: total.y + points[index].y,
+                z: total.z + points[index].z
             };
         },
         { x: 0, y: 0, z: 0 }
@@ -561,21 +583,21 @@ const avgReadings = (readings, indexes) => {
 
 const validateRawData = (cartridge) => {
     const validation = [];
-    const readings = cartridge.rawData.readings;
-    if (!readings) {
-        validation.push('No optical readings');
+    const points = cartridge.rawData.points || cartridge.rawData.readings;
+    if (!points) {
+        validation.push('No optical data');
     } 
     if (!cartridge.assay.analysis) {
         validation.push('Missing analysis section of assay definition');
     }
-    if (cartridge.assay && cartridge.assay.analysis && (cartridge.assay.analysis.expectedNumberOfReadings !== readings.length)) {
-        validation.push(`Wrong number of optical readings: ${cartridge.assay.analysis.expectedNumberOfReadings} expected, ${readings.length} found`);
+    if (cartridge.assay && cartridge.assay.analysis && (cartridge.assay.analysis.expectedNumberOfPoints !== points.length)) {
+        validation.push(`Wrong number of optical data points: ${cartridge.assay.analysis.expectedNumberOfPoints} expected, ${points.length} found`);
     }                
-    readings.forEach((reading, index) => {
-        if (reading.L < process.env.OPTICS_L_MIN) {
-            validation.push(`reading ${index} too low (${reading.L.toFixed(1)} < ${process.env.OPTICS_L_MIN})`);
-        } else if (reading.L > process.env.OPTICS_L_MAX) {
-            validation.push(`reading ${index} too high (${reading.L.toFixed(1)} > ${process.env.OPTICS_L_MAX})`);
+    points.forEach((point, index) => {
+        if (point.L < process.env.OPTICS_L_MIN) {
+            validation.push(`data point ${index} too low (${point.L.toFixed(1)} < ${process.env.OPTICS_L_MIN})`);
+        } else if (point.L > process.env.OPTICS_L_MAX) {
+            validation.push(`data point ${index} too high (${point.L.toFixed(1)} > ${process.env.OPTICS_L_MAX})`);
         }
     });
     return validation;
@@ -632,20 +654,21 @@ const validateReadouts = ({ readouts, assay }) => {
     return validation;
 };
 
-const absorption = (baseline, final) => {
+const calculateAbsorption = (baseline, final) => {
     const ratio = {
         x: final.x ? baseline.x / final.x : 0,
         y: final.y ? baseline.y / final.y : 0,
         z: final.z ? baseline.z / final.z : 0
     };
-    return magnitude(ratio);
+    return absorption(ratio);
 };
 
-const getLinearInterpolationReadouts = (readings, assay) => {
-    const sample = absorption(avgReadings(readings, [0, 3]), avgReadings(readings, [6, 9, 12]));
-    const control0 = absorption(avgReadings(readings, [1, 4]), avgReadings(readings, [7, 10, 13]));
-    const controlHigh = absorption(avgReadings(readings, [2, 5]), avgReadings(readings, [8, 11, 14]));
-    const concentration = Number.parseFloat((assay.analysis.controlHighConcentration * (sample - control0) / (controlHigh - control0)).toFixed(1));
+const getLinearInterpolationReadouts = (cartridge) => {
+    const points = cartridge.rawData.points || cartridge.rawData.readings;
+    const sample = calculateAbsorption(avgPointsIndexed(points, [0, 3]), avgPointsIndexed(points, [6, 9, 12]));
+    const control0 = calculateAbsorption(avgPointsIndexed(points, [1, 4]), avgPointsIndexed(points, [7, 10, 13]));
+    const controlHigh = calculateAbsorption(avgPointsIndexed(points, [2, 5]), avgPointsIndexed(points, [8, 11, 14]));
+    const concentration = fixedRound(cartridge.assay.analysis.controlHighConcentration * (sample - control0) / (controlHigh - control0), 1);
     return { sample, control0, controlHigh, concentration };
 };
 
@@ -656,42 +679,129 @@ const accumSlope = (result, point, mean) => {
     };
 };
 
-const readoutSlope = (readings, index) => {
-        // const bline = magnitude(baseline);
+const fixedRound = (num, digits) => {
+    return Number.parseFloat(num.toFixed(digits));
+};
+
+const calculateSlope = (points) => {
     const pt = [];
     const mean = { x: 0, y: 0 };
-    for (let i = 0; i < 4; i += 1) {
-        const r = readings[3 * i + index];
-        const p = { x: r.time / 1000, y: r.L };
+    points.forEach((point) => {
+        const p = { x: point.time / 1000, y: point.L };
         mean.x += p.x;
         mean.y += p.y;
         pt.push(p);
-    }
-    mean.x /= 4;
-    mean.y /= 4;
+    });
+    mean.x /= points.length;
+    mean.y /= points.length;
     const div = pt.reduce((result, point) => accumSlope(result, point, mean), { num: 0, denom: 0 });
     const slope = -div.num / div.denom;
-    return Number.parseFloat(slope.toFixed(3));
+    return fixedRound(slope, 3);
 };
 
-const getLeastSquaresSlopeReadouts = (readings, assay) => {
-    const sample = readoutSlope(readings, 3);
-    const control0 = readoutSlope(readings, 4);
-    const controlHigh = readoutSlope(readings, 5);
-    const concentration = Number.parseFloat((assay.analysis.controlHighConcentration * (sample - control0) / (controlHigh - control0)).toFixed(1));
+const getLeastSquaresSlopeReadouts = (cartridge) => {
+    const points = cartridge.rawData.points || cartridge.rawData.readings;
+    const sample = calculateSlope(points.filter((_, index) => index > 2 && (index % 3) === 0));
+    const control0 = calculateSlope(points.filter((_, index) => index > 2 && (index % 3) === 1));
+    const controlHigh = calculateSlope(points.filter((_, index) => index > 2 && (index % 3) === 2));
+    const concentration = fixedRound(cartridge.assay.analysis.controlHighConcentration * (sample - control0) / (controlHigh - control0), 1);
     return { sample, control0, controlHigh, concentration };
 };
 
+const calculateLine = (points) => {
+    const mean = points.reduce((avg, point) => {
+        return {
+            x: avg.x + point.x,
+            y: avg.y + point.y
+        };
+    }, { x: 0, y: 0 });
+    mean.x /= points.length;
+    mean.y /= points.length;
+    const div = points.reduce((result, point) => accumSlope(result, point, mean), { num: 0, denom: 0 });
+    const slope = fixedRound(div.num / div.denom, 3);
+    const yIntercept = mean.y - slope * mean.x;
+    const xIntercept = -yIntercept / slope;
+    console.log('calculateLine slope xIntercept yIntercept', slope, xIntercept, yIntercept);
+    return { slope, xIntercept, yIntercept };
+};
+
+const getAreaParams = (cartridge) => {
+    const bcode = cartridge.assay.BCODE.code;
+    const points = cartridge.rawData.points || cartridge.rawData.readings;
+    const baselineCmd = bcode.find((code) => code.command.toUpperCase() === 'SET BASELINE AND READ SENSORS');
+    const baselineCount = baselineCmd.params.number_of_readings;
+    const baselineTimeCmd = bcode.find((code) => code.command.toUpperCase() === 'SET BASELINE TIME');
+    if (baselineTimeCmd) {
+        return { measured: true, baselineCount, baselineTime: points[0].time };
+    } else {
+        const startIndex = bcode.findIndex((code) => code.params.comment === 'Oscillate beads in well 5');
+        const endIndex = bcode.findIndex((code) => code.params.command === 'Read Sensors Multiple Times With Pause');
+        if (startIndex === -1) {
+            console.log('Cannot find well 5 BCODE');
+            return { measured: false };
+        }
+        const bcodeSection = bcode.slice(startIndex - 1, endIndex - 1);
+        const msToFirstReading = bcodeSection.reduce((msec, code) => {
+            const cmd = code.command.toUpperCase();
+            if (cmd === 'DELAY') {
+                return msec + code.params.delay_ms;
+            } else if (cmd === 'OSCILLATE STAGE') {
+                return msec + (code.params.cycles * Math.abs(code.params.microns) * code.params.step_delay_us / 6250);
+            } else if (cmd === 'MOVE MICRONS') {
+                return msec + (Math.abs(code.params.microns) * code.params.step_delay_us / 12500);
+            } else {
+                return msec;
+            }
+        }, 0);
+        const baselineTime = points[3 * baselineCount].time - msToFirstReading;
+        return { measured: true, baselineCount, baselineTime };
+    }
+};
+
+const calculateAreaUnderCurve = (points, { baselineCount, baselineTime }) => {
+    const avg = avgPoints(points.slice(0, baselineCount));
+    const baselineL = hypotenuse(avg);
+    const dataPoints = points.slice(baselineCount).map((point) => {
+        return {
+            x: (point.time - baselineTime) / 1000,
+            y: baselineL - hypotenuse(point)
+        };
+    });
+    const line = calculateLine(dataPoints);
+    const finalPoint = dataPoints[dataPoints.length - 1];
+    console.log('AOC line finalPoint', line, finalPoint);
+    if (line.yIntercept > 0) {
+        return fixedRound(0.5 * (line.yIntercept + finalPoint.y) * finalPoint.x / 1000, 1);
+    } else {
+        return fixedRound(0.5 * finalPoint.y * finalPoint.x / 1000, 1);
+    }
+};
+
+const getAreaUnderCurveReadouts = (cartridge) => {
+    const points = cartridge.rawData.points || cartridge.rawData.readings;
+    const areaParams = getAreaParams(cartridge);
+    if (areaParams.measured) {
+        const sample = calculateAreaUnderCurve(points.filter((_, i) => (i % 3 == 0)), areaParams);
+        const control0 = calculateAreaUnderCurve(points.filter((_, i) => (i % 3 == 1)), areaParams);
+        const controlHigh = calculateAreaUnderCurve(points.filter((_, i) => (i % 3 == 2)), areaParams);
+        const concentration = fixedRound(cartridge.assay.analysis.controlHighConcentration * (sample - control0) / (controlHigh - control0), 1);
+        return { sample, control0, controlHigh, concentration };
+    } else {
+        return { sample: null, control0: null, controlHigh: null, concentration: null };
+    }
+};
+
 const calculateReadouts = (cartridge) => {
-    const readings = cartridge.rawData.readings;
     const method = cartridge.assay && cartridge.assay.analysis && cartridge.assay.analysis.methodology;
     if (cartridge.validationErrors.length > 0) {
         return { sample: null, control0: null, controlHigh: null, concentration: null };
     } else if (method) {
         if (method === 'linear interpolation') {
-            return getLinearInterpolationReadouts(readings, cartridge.assay);
+            return getLinearInterpolationReadouts(cartridge);
         } else if (method === 'least squares slope') {
-            return getLeastSquaresSlopeReadouts(readings, cartridge.assay);
+            return getLeastSquaresSlopeReadouts(cartridge);
+        } else if (method === 'area under curve') {
+            return getAreaUnderCurveReadouts(cartridge);
         } else {
             return { sample: null, control0: null, controlHigh: null, concentration: null };
         }
@@ -715,6 +825,14 @@ const calculateResult = (cartridge) => {
         return 'Negative';
     }
 };
+
+////////////////////////////////////////////////////////////////////////////////////////
+//                                                                                    //
+//                                                                                    //
+//                           END CALCULATION SECTION                                  //
+//                                                                                    //
+//                                                                                    //
+////////////////////////////////////////////////////////////////////////////////////////
 
 const test_upload = (callback, deviceId, payload) => {
     const result = parseData(payload);
