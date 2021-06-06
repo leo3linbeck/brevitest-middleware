@@ -843,7 +843,7 @@ const test_upload = (callback, deviceId, payload) => {
             const who = 'brevitest-cloud';
             const where = cartridge.checkpoints.underway.location;
             cartridge.statusUpdatedOn = when;
-            if (result.numberOfReadings) {
+            if (result.numberOfPoints) {
                 cartridge.status = 'completed';
                 cartridge.checkpoints.completed = { when, who, where };
                 cartridge.rawData = result;
