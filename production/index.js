@@ -721,7 +721,6 @@ const calculateLine = (points) => {
     const slope = fixedRound(div.num / div.denom, 3);
     const yIntercept = mean.y - slope * mean.x;
     const xIntercept = -yIntercept / slope;
-    console.log('calculateLine slope xIntercept yIntercept', slope, xIntercept, yIntercept);
     return { slope, xIntercept, yIntercept };
 };
 
@@ -737,7 +736,6 @@ const getAreaParams = (cartridge) => {
         const startIndex = bcode.findIndex((code) => code.params.comment === 'Oscillate beads in well 5');
         const endIndex = bcode.findIndex((code) => code.params.command === 'Read Sensors Multiple Times With Pause');
         if (startIndex === -1) {
-            console.log('Cannot find well 5 BCODE');
             return { measured: false };
         }
         const bcodeSection = bcode.slice(startIndex - 1, endIndex - 1);
@@ -769,7 +767,6 @@ const calculateAreaUnderCurve = (points, { baselineCount, baselineTime }) => {
     });
     const line = calculateLine(dataPoints);
     const finalPoint = dataPoints[dataPoints.length - 1];
-    console.log('AOC line finalPoint', line, finalPoint);
     if (line.yIntercept > 0) {
         return fixedRound(0.5 * (line.yIntercept + finalPoint.y) * finalPoint.x / 1000, 1);
     } else {
