@@ -891,7 +891,8 @@ const within_bounds = (readings, max, min) => {
 
 const device_validated = (validation) => {
     let validated = true;
-    if (validation.magnetometer) {
+    console.log(validation);
+    if (validation.magnetometer && validation.magnetometer.data && validation.magnetometer.data.length) {
         validation.magnetometer.valid = validation.magnetometer.data.reduce((ok, well) => {
             return ok && (Math.abs(well.gauss_z) > process.env.MAGNET_MINIMUM_Z_GAUSS); 
         }, true);
@@ -1007,8 +1008,7 @@ const validate_optics = (callback, deviceId, payload) => {
     const color = {};
     color['n' + codes[2]] = {
         instrument: data.cartridgeId,
-        data: [ ...data.readings ]
-
+        data: [ ...data.points ]
     };
     update_validation(callback, 'validate-optics', deviceId, null, color);
 };
