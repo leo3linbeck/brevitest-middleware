@@ -793,7 +793,7 @@ const getAreaUnderCurveReadouts = (cartridge) => {
 
 const getAbsorption = (baselinePoints, readingPoints, index) => {
     const ff = (_, i) => (i % 3 == index);
-    return calculateAbsorption(avgPoints(baselinePoints.filter(ff), avgPoints(readingPoints.filter(ff))));
+    return calculateAbsorption(avgPoints(baselinePoints.filter(ff)), avgPoints(readingPoints.filter(ff)));
 };
 
 const getAggregationReadouts = (cartridge, aggregation) => {
@@ -804,8 +804,9 @@ const getAggregationReadouts = (cartridge, aggregation) => {
     const cHPoints = points.filter((_, i) => (i % 3 == 2));
     switch (aggregation) {
         case 'absorption with L value':
-            const baselinePoints = points.filter((_, i) => (i < areaParams.baselineCount * 3));
-            const readingPoints = points.filter((_, i) => (i >= areaParams.baselineCount * 3));
+            const count = areaParams.exists ? areaParams.baselineCount * 3 : 6;
+            const baselinePoints = points.filter((_, i) => (i < count));
+            const readingPoints = points.filter((_, i) => (i >= count));
             return {
                 sample: getAbsorption(baselinePoints, readingPoints, 0),
                 control0: getAbsorption(baselinePoints, readingPoints, 1),
