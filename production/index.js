@@ -667,6 +667,15 @@ const calculateAbsorption = (baseline, final) => {
     return absorption(ratio);
 };
 
+const getLegacyReadouts = (cartridge) => {
+    const points = cartridge.rawData.points || cartridge.rawData.readings;
+    const sample = calculateAbsorption(avgPointsIndexed(points, [0, 3]), avgPointsIndexed(points, [6, 9, 12]));
+    const control0 = calculateAbsorption(avgPointsIndexed(points, [1, 4]), avgPointsIndexed(points, [7, 10, 13]));
+    const controlHigh = calculateAbsorption(avgPointsIndexed(points, [2, 5]), avgPointsIndexed(points, [8, 11, 14]));
+    const concentration = fixedRound(cartridge.assay.analysis.controlHighConcentration * (sample - control0) / (controlHigh - control0), 1);
+    return { sample, control0, controlHigh, concentration };
+};
+
 const getLinearInterpolationReadouts = (cartridge) => {
     const points = cartridge.rawData.points || cartridge.rawData.readings;
     const sample = calculateAbsorption(avgPointsIndexed(points, [0, 3]), avgPointsIndexed(points, [6, 9, 12]));
@@ -677,7 +686,7 @@ const getLinearInterpolationReadouts = (cartridge) => {
 };
 
 const sumOfReadings = (points, numberOfBaselines, mod) => {
-    const num = numberOfBaselines * 3
+    const num = numberOfBaselines * 3;
     const baselinePoints = points.filter((_, i) => i < num && (i % 3) === mod);
     const finalPoints = points.filter((_, i) => i >= num && (i % 3) === mod);
     return fixedRound(hypotenuse(avgPoints(baselinePoints)) - hypotenuse(avgPoints(finalPoints)), 1);
@@ -699,27 +708,31 @@ const accumSlope = (result, point, mean) => {
     return {
         num: result.num + (point.x - mean.x) * (point.y - mean.y),
         denom: result.denom + (point.x - mean.x) * (point.x - mean.x)
-    }
+    };
 };
 
 const fixedRound = (num, digits) => {
     return Number.parseFloat(num.toFixed(digits));
-}
+};
 
-const calculateSlope = (points) => {
-    const pt = []
-    const mean = { x: 0, y: 0 }
-    points.forEach((point) => {
-        const p = { x: point.time / 1000, y: point.L }
-        mean.x += p.x
-        mean.y += p.y
-        pt.push(p)
-    })
+const calculateLine = (points) => {
+    const mean = points.reduce((avg, point) => {
+        return {
+            x: avg.x + point.x,
+            y: avg.y + point.y
+        };
+    }, { x: 0, y: 0 });
     mean.x /= points.length;
     mean.y /= points.length;
-    const div = pt.reduce((result, point) => accumSlope(result, point, mean), { num: 0, denom: 0 })
-    const slope = -div.num / div.denom;
-    return fixedRound(slope, 3);
+    const div = points.reduce((result, point) => accumSlope(result, point, mean), { num: 0, denom: 0 });
+    const slope = fixedRound(div.num / div.denom, 3);
+    const yIntercept = mean.y - slope * mean.x;
+    const xIntercept = -yIntercept / slope;
+    return { slope, xIntercept, yIntercept };
+};
+
+const calculateSlope = (points) => {
+    return calculateLine(points).slope;
 };
 
 const getLeastSquaresSlopeReadouts = (cartridge) => {
@@ -729,23 +742,6 @@ const getLeastSquaresSlopeReadouts = (cartridge) => {
     const controlHigh = calculateSlope(points.filter((_, index) => index > 2 && (index % 3) === 2));
     const concentration = fixedRound(cartridge.assay.analysis.controlHighConcentration * (sample - control0) / (controlHigh - control0), 1);
     return { sample, control0, controlHigh, concentration };
-};
-
-const calculateLine = (points) => {
-    const mean = points.reduce((avg, point) => {
-        return {
-            x: avg.x + point.x,
-            y: avg.y + point.y
-        }
-    }, { x: 0, y: 0 })
-    mean.x /= points.length;
-    mean.y /= points.length;
-    const div = points.reduce((result, point) => accumSlope(result, point, mean), { num: 0, denom: 0 })
-    const slope = fixedRound(div.num / div.denom, 3);
-    const yIntercept = mean.y - slope * mean.x;
-    const xIntercept = -yIntercept / slope;
-    console.log('calculateLine slope xIntercept yIntercept', slope, xIntercept, yIntercept);
-    return { slope, xIntercept, yIntercept };
 };
 
 const getAreaParams = (cartridge) => {
@@ -761,16 +757,16 @@ const getAreaParams = (cartridge) => {
     } else {
         return { exists: false };
     }
-}
+};
 
 const calculateAreaUnderCurve = (points, { baselineCount, baselineTime, duration }) => {
-    const avg = avgPoints(points.slice(0, baselineCount))
+    const avg = avgPoints(points.slice(0, baselineCount));
     const baselineL = hypotenuse(avg);
     const dataPoints = points.slice(baselineCount).map((point) => {
         return {
             x: point.time - baselineTime,
             y: baselineL - hypotenuse(point)
-        }
+        };
     });
     const line = calculateLine(dataPoints);
     const finalPoint = dataPoints[dataPoints.length - 1];
@@ -795,22 +791,89 @@ const getAreaUnderCurveReadouts = (cartridge) => {
     }
 };
 
+const getAbsorption = (baselinePoints, readingPoints, index) => {
+    const ff = (_, i) => (i % 3 == index);
+    return calculateAbsorption(avgPoints(baselinePoints.filter(ff), avgPoints(readingPoints.filter(ff))));
+};
+
+const getAggregationReadouts = (cartridge, aggregation) => {
+    const areaParams = getAreaParams(cartridge);
+    const points = cartridge.rawData.points || cartridge.rawData.readings;
+    const sPoints = points.filter((_, i) => (i % 3 == 0));
+    const c0Points = points.filter((_, i) => (i % 3 == 1));
+    const cHPoints = points.filter((_, i) => (i % 3 == 2));
+    switch (aggregation) {
+        case 'absorption with L value':
+            const baselinePoints = points.filter((_, i) => (i < areaParams.baselineCount * 3));
+            const readingPoints = points.filter((_, i) => (i >= areaParams.baselineCount * 3));
+            return {
+                sample: getAbsorption(baselinePoints, readingPoints, 0),
+                control0: getAbsorption(baselinePoints, readingPoints, 1),
+                controlHigh: getAbsorption(baselinePoints, readingPoints, 2)
+            };
+        case 'sum of change in L value':
+            return {
+                sample: sumOfReadings(points, areaParams.baselineCount, 0),
+                control0: sumOfReadings(points, areaParams.baselineCount, 1),
+                controlHigh: sumOfReadings(points, areaParams.baselineCount, 2)
+            };
+        case 'least squares slope':
+            return {
+                sample: calculateSlope(sPoints),
+                control0: calculateSlope(c0Points),
+                controlHigh: calculateSlope(cHPoints)
+            };
+        default: // area under curve
+            return {
+                sample: calculateAreaUnderCurve(sPoints, areaParams),
+                control0: calculateAreaUnderCurve(c0Points, areaParams),
+                controlHigh: calculateAreaUnderCurve(cHPoints, areaParams)
+            };
+    }
+};
+
+const getConversionReadout = (cartridge, readouts) => {
+    const factor = cartridge.assay.analysis.conversionFactor || cartridge.assay.analysis.controlHighConcentration;
+    switch (cartridge.assay.analysis.conversion) {
+        case 'linear with control high net of control zero':
+            return fixedRound(factor * (readouts.sample - readouts.control0) / (readouts.controlHigh - readouts.control0), 1);
+        case 'linear with control high':
+            return fixedRound(factor * readouts.sample / readouts.controlHigh, 1);
+        case 'scalar':
+            return fixedRound(factor * readouts.sample, 1);
+        default: // none
+            return fixedRound(readouts.sample, 1);
+    }
+};
+
 const calculateReadouts = (cartridge) => {
-    const method = cartridge.assay && cartridge.assay.analysis && cartridge.assay.analysis.methodology;
-    if (cartridge.validationErrors.length > 0) {
-        return { sample: null, control0: null, controlHigh: null, concentration: null };
-    } else if (method) {
-        if (method === 'linear interpolation') {
-            return getLinearInterpolationReadouts(cartridge);
-        } else if (method === 'sum of readings') {
-            return getSumOfReadingsReadouts(cartridge);
-        } else if (method === 'least squares slope') {
-            return getLeastSquaresSlopeReadouts(cartridge);
-        } else if (method === 'area under curve') {
-            return getAreaUnderCurveReadouts(cartridge);
+    const analysis = cartridge.assay && cartridge.assay.analysis;
+    if (analysis) {
+        const aggregation = analysis.aggregation;
+        if (aggregation) {
+            const readouts = getAggregationReadouts(cartridge, aggregation);
+            return {
+                ...readouts,
+                concentration: getConversionReadout(cartridge, readouts)
+            };
         } else {
-            return { sample: null, control0: null, controlHigh: null, concentration: null };
+            const method =  analysis.methodology;
+            if (cartridge.validationErrors.length > 0) {
+                return { sample: null, control0: null, controlHigh: null, concentration: null };
+            } else if (method) {
+                if (method === 'linear interpolation') {
+                    return getLinearInterpolationReadouts(cartridge);
+                } else if (method === 'sum of readings') {
+                    return getSumOfReadingsReadouts(cartridge);
+                } else if (method === 'least squares slope') {
+                    return getLeastSquaresSlopeReadouts(cartridge);
+                } else {
+                    return getAreaUnderCurveReadouts(cartridge);
+                }
+            }
         }
+    } else {
+        return getLegacyReadouts(cartridge);
     }
 };
 
