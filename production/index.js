@@ -777,6 +777,39 @@ const calculateAreaUnderCurve = (points, { baselineCount, baselineTime, duration
     }
 };
 
+const L_MAX = 20000;
+const ALPHA_MAX = 10;
+const DELTA_L_MIN = 100;
+const calculateAlpha = (points, cartridge) => {
+    const maxL = cartridge.assay.analysis.maximumL || L_MAX;
+    const minDeltaL = cartridge.assay.analysis.minimumDeltaL || DELTA_L_MIN;
+    const l0 = hypotenuse(points[0]);
+    const l1 = hypotenuse(points[1]);
+    const dataL = l0 > l1 ? l0 - l1 : minDeltaL;
+    const alphaMax = cartridge.assay.analysis.maximumAlpha || ALPHA_MAX;
+    if (dataL >= maxL) {
+        return alphaMax * 1000;
+    } else {
+        return fixedRound(Math.log(maxL / dataL - 1) * 1000, 1);
+    }
+};
+
+const derivative = (a, b) => {
+    return (hypotenuse(b) - hypotenuse(a)) / (b.time - b.time);
+};
+
+const calculateLogisticIntegral = (points, cartridge) => {
+    const l0 = hypotenuse(points[0]);
+    const l1 = hypotenuse(avgPoints(points[1], points[2]));
+    const dataL = l0 > l1 ? l0 - l1 : 100;
+    const dataLPrime = derivative(points[1], points[2]);
+    const avgTime = (points[2] + points[1]) / 2;
+    const maxL = cartridge.assay.analysis.maximumL || 20000;
+    const alpha = dataL >= maxL || dataL <= 0 ? ALPHA_MAX : fixedRound(Math.log(maxL / dataL - 1), 1);
+    const k = dataLPrime * Math.exp(-alpha) * Math.pow((1 + Math.exp(alpha)), 2) / maxL;
+    return fixedRound(maxL * (Math.log(Math.exp(-alpha) + 1) + avgTime), 1);
+};
+
 const getAreaUnderCurveReadouts = (cartridge) => {
     const points = cartridge.rawData.points || cartridge.rawData.readings;
     const areaParams = getAreaParams(cartridge);
@@ -793,7 +826,7 @@ const getAreaUnderCurveReadouts = (cartridge) => {
 
 const getAbsorption = (baselinePoints, readingPoints, index) => {
     const ff = (_, i) => (i % 3 == index);
-    return calculateAbsorption(avgPoints(baselinePoints.filter(ff)), avgPoints(readingPoints.filter(ff)));
+    return calculateAbsorption(avgPoints(baselinePoints.filter(ff), avgPoints(readingPoints.filter(ff))));
 };
 
 const getAggregationReadouts = (cartridge, aggregation) => {
@@ -804,9 +837,8 @@ const getAggregationReadouts = (cartridge, aggregation) => {
     const cHPoints = points.filter((_, i) => (i % 3 == 2));
     switch (aggregation) {
         case 'absorption with L value':
-            const count = areaParams.exists ? areaParams.baselineCount * 3 : 6;
-            const baselinePoints = points.filter((_, i) => (i < count));
-            const readingPoints = points.filter((_, i) => (i >= count));
+            const baselinePoints = points.filter((_, i) => (i < areaParams.baselineCount * 3));
+            const readingPoints = points.filter((_, i) => (i >= areaParams.baselineCount * 3));
             return {
                 sample: getAbsorption(baselinePoints, readingPoints, 0),
                 control0: getAbsorption(baselinePoints, readingPoints, 1),
@@ -823,6 +855,18 @@ const getAggregationReadouts = (cartridge, aggregation) => {
                 sample: calculateSlope(sPoints),
                 control0: calculateSlope(c0Points),
                 controlHigh: calculateSlope(cHPoints)
+            };
+        case 'alpha':
+            return {
+                sample: calculateAlpha(sPoints, cartridge),
+                control0: calculateAlpha(c0Points, cartridge),
+                controlHigh: calculateAlpha(cHPoints, cartridge)
+            };
+        case 'logistic integral':
+            return {
+                sample: calculateLogisticIntegral(sPoints, cartridge),
+                control0: calculateLogisticIntegral(c0Points, cartridge),
+                controlHigh: calculateLogisticIntegral(cHPoints, cartridge)
             };
         default: // area under curve
             return {
