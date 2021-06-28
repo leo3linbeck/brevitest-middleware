@@ -565,6 +565,10 @@ const sumPoints = (points) => {
     );
 };
 
+const subtractPoints = (p1, p2) => {
+    return { x: p1.x - p2.x, y: p1.y - p2.y, z: p1.z - p2.z };
+};
+
 const avgPoints = (points) => {
     const sum = sumPoints(points);
     return { x: sum.x / points.length, y: sum.y / points.length, z: sum.z / points.length };
@@ -783,31 +787,33 @@ const DELTA_L_MIN = 100;
 const calculateAlpha = (points, cartridge) => {
     const maxL = cartridge.assay.analysis.maximumL || L_MAX;
     const minDeltaL = cartridge.assay.analysis.minimumDeltaL || DELTA_L_MIN;
-    const l0 = hypotenuse(points[0]);
-    const l1 = hypotenuse(points[1]);
-    const dataL = l0 > l1 ? l0 - l1 : minDeltaL;
+    const deltaL = points[0].L - (points[1].L + points[2].L + points[3].L + points[4].L) * 0.25;
+    const dataL = deltaL > minDeltaL ? deltaL : minDeltaL;
     const alphaMax = cartridge.assay.analysis.maximumAlpha || ALPHA_MAX;
+    console.log(maxL, minDeltaL, deltaL, dataL, alphaMax);
     if (dataL >= maxL) {
         return alphaMax * 1000;
     } else {
-        return fixedRound(Math.log(maxL / dataL - 1) * 1000, 1);
+        return fixedRound(Math.log((maxL / dataL) - 1) * 1000, 1);
     }
 };
 
 const derivative = (a, b) => {
-    return (hypotenuse(b) - hypotenuse(a)) / (b.time - b.time);
+    return (a.L - b.L) / (b.time - a.time) * 1000;
 };
 
 const calculateLogisticIntegral = (points, cartridge) => {
-    const l0 = hypotenuse(points[0]);
-    const l1 = hypotenuse(avgPoints(points[1], points[2]));
-    const dataL = l0 > l1 ? l0 - l1 : 100;
+    const minDeltaL = cartridge.assay.analysis.minimumDeltaL || DELTA_L_MIN;
+    const deltaL = points[0].L - (points[1].L + points[2].L) * 0.5;
+    const dataL = deltaL > minDeltaL ? deltaL : minDeltaL;
     const dataLPrime = derivative(points[1], points[2]);
-    const avgTime = (points[2] + points[1]) / 2;
-    const maxL = cartridge.assay.analysis.maximumL || 20000;
-    const alpha = dataL >= maxL || dataL <= 0 ? ALPHA_MAX : fixedRound(Math.log(maxL / dataL - 1), 1);
+    const avgTime = (0.5 * (points[1].time + points[2].time) - points[0].time) / 1000;
+    const maxL = cartridge.assay.analysis.maximumL || L_MAX;
+    const alphaMax = cartridge.assay.analysis.maximumAlpha || ALPHA_MAX;
+    const alpha = dataL >= maxL ? alphaMax : Math.log(maxL / dataL - 1);
     const k = dataLPrime * Math.exp(-alpha) * Math.pow((1 + Math.exp(alpha)), 2) / maxL;
-    return fixedRound(maxL * (Math.log(Math.exp(-alpha) + 1) + avgTime), 1);
+    console.log(minDeltaL, deltaL, dataL, dataLPrime, avgTime, maxL, alphaMax, alpha, k)
+    return fixedRound(maxL / 1000 * (Math.log(Math.exp(-alpha) + 1) / k), 1);
 };
 
 const getAreaUnderCurveReadouts = (cartridge) => {
@@ -829,6 +835,13 @@ const getAbsorption = (baselinePoints, readingPoints, index) => {
     return calculateAbsorption(avgPoints(baselinePoints.filter(ff), avgPoints(readingPoints.filter(ff))));
 };
 
+const getAssayMinusControlHighXYZ = (points) => {
+    const assay = subtractPoints(points[0], points[6]);
+    const control = subtractPoints(points[2], points[8]);
+    const diff = subtractPoints(assay, control);
+    return fixedRound(hypotenuse(diff), 1);
+};
+
 const getAggregationReadouts = (cartridge, aggregation) => {
     const areaParams = getAreaParams(cartridge);
     const points = cartridge.rawData.points || cartridge.rawData.readings;
@@ -843,6 +856,13 @@ const getAggregationReadouts = (cartridge, aggregation) => {
                 sample: getAbsorption(baselinePoints, readingPoints, 0),
                 control0: getAbsorption(baselinePoints, readingPoints, 1),
                 controlHigh: getAbsorption(baselinePoints, readingPoints, 2)
+            };
+        case 'xyz magnitude assay minus controlHigh':
+            return {
+                sample: fixedRound(hypotenuse(subtractPoints(points[0], points[6])), 1),
+                control0: fixedRound(hypotenuse(subtractPoints(points[1], points[7])), 1),
+                controlHigh: fixedRound(hypotenuse(subtractPoints(points[2], points[8])), 1),
+                concentration: getAssayMinusControlHighXYZ(points)
             };
         case 'sum of change in L value':
             return {
@@ -887,7 +907,7 @@ const getConversionReadout = (cartridge, readouts) => {
         case 'scalar':
             return fixedRound(factor * readouts.sample, 1);
         default: // none
-            return fixedRound(readouts.sample, 1);
+            return fixedRound(readouts.concentration || readouts.sample, 1);
     }
 };
 
