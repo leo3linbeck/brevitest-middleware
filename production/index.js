@@ -835,11 +835,12 @@ const getAbsorption = (baselinePoints, readingPoints, index) => {
     return calculateAbsorption(avgPoints(baselinePoints.filter(ff), avgPoints(readingPoints.filter(ff))));
 };
 
-const getAssayMinusControlHighXYZ = (points) => {
-    const assay = subtractPoints(points[0], points[6]);
-    const control = subtractPoints(points[2], points[8]);
+const getAssayMinusControlHighXYZ = (points, num) => {
+    const assay = subtractPoints(points[0], points[num]);
+    const control = subtractPoints(points[2], points[num + 2]);
     const diff = subtractPoints(assay, control);
-    return fixedRound(hypotenuse(diff), 1);
+    const sign = (hypotenuse(assay) - hypotenuse(control)) < 0 ? -1 : 1;
+    return fixedRound(sign * hypotenuse(diff), 1);
 };
 
 const getAggregationReadouts = (cartridge, aggregation) => {
@@ -858,11 +859,12 @@ const getAggregationReadouts = (cartridge, aggregation) => {
                 controlHigh: getAbsorption(baselinePoints, readingPoints, 2)
             };
         case 'xyz magnitude assay minus controlHigh':
+            const num = areaParams.baselineCount * 3;
             return {
-                sample: fixedRound(hypotenuse(subtractPoints(points[0], points[6])), 1),
-                control0: fixedRound(hypotenuse(subtractPoints(points[1], points[7])), 1),
-                controlHigh: fixedRound(hypotenuse(subtractPoints(points[2], points[8])), 1),
-                concentration: getAssayMinusControlHighXYZ(points)
+                sample: fixedRound(hypotenuse(subtractPoints(points[0], points[num])), 1),
+                control0: fixedRound(hypotenuse(subtractPoints(points[1], points[num + 1])), 1),
+                controlHigh: fixedRound(hypotenuse(subtractPoints(points[2], points[num + 2])), 1),
+                aggregate: getAssayMinusControlHighXYZ(points, num)
             };
         case 'sum of change in L value':
             return {
@@ -907,7 +909,7 @@ const getConversionReadout = (cartridge, readouts) => {
         case 'scalar':
             return fixedRound(factor * readouts.sample, 1);
         default: // none
-            return fixedRound(readouts.concentration || readouts.sample, 1);
+            return fixedRound(readouts.aggregate || readouts.sample, 1);
     }
 };
 
