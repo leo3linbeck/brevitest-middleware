@@ -1028,31 +1028,30 @@ const within_bounds = (readings, max, min) => {
     }, true);
 };
 
-const device_validated = (validation) => {
-    let validated = true;
-    console.log(validation);
-    if (validation.magnetometer && validation.magnetometer.data && validation.magnetometer.data.length) {
-        validation.magnetometer.valid = validation.magnetometer.data.reduce((ok, well) => {
-            return ok && (Math.abs(well.gauss_z) > process.env.MAGNET_MINIMUM_Z_GAUSS); 
+const validate_magnetometer = (data) => {
+    if (data && data.length) {
+        return data.reduce((ok, well) => {
+            return ok && (Math.abs(well.gauss_z) > process.env.MAGNET_MINIMUM_Z_GAUSS) &&  (Math.abs(well.temperature) > process.env.TEMPERATURE_MIN); 
         }, true);
-        validated = validated && validation.magnetometer.valid;
+    } else {
+        return false;
     }
-    if (validation.color0000 && Object.keys(validation.color0000).length) {
-        validation.color0000.valid = within_bounds(validation.color0000.data, process.env.OPTICS_0000_MAX, process.env.OPTICS_0000_MIN);
-        validated = validated && validation.color0000.valid;
-    }
-    if (validation.color0202 && Object.keys(validation.color0202).length) {
-        validation.color0202.valid = within_bounds(validation.color0202.data, process.env.OPTICS_0202_MAX, process.env.OPTICS_0202_MIN);
-        validated = validated && validation.color0202.valid;
-    }
-    if (validation.color0218 && Object.keys(validation.color0218).length) {
-        validation.color0218.valid = within_bounds(validation.color0218.data, process.env.OPTICS_0218_MAX, process.env.OPTICS_0218_MIN);
-        validated = validated && validation.color0218.valid;
-    }
-    return validated;
+};
+
+const validate_color_0000 = (data) => {
+    return within_bounds(data, process.env.OPTICS_0000_MAX, process.env.OPTICS_0000_MIN);
+};
+
+const validate_color_0202 = (data) => {
+    return within_bounds(data, process.env.OPTICS_0202_MAX, process.env.OPTICS_0202_MIN);
+};
+
+const validate_color_0218 = (data) => {
+    return within_bounds(data, process.env.OPTICS_0218_MAX, process.env.OPTICS_0218_MIN);
 };
 
 const update_validation = (callback, eventName, deviceId, magnetometer, color) => {
+    let msg = '';
     let validated = false;
     const validationDate = new Date();
     getDocument(deviceId)
@@ -1063,17 +1062,20 @@ const update_validation = (callback, eventName, deviceId, magnetometer, color) =
                     color0202: {},
                     color0218: {}
                 };
-            
             if (magnetometer) {
-                validation.magnetometer = { ...magnetometer, validationDate };
+                validation.magnetometer = { ...magnetometer, validationDate, valid: validate_magnetometer(magnetometer.data) };
+                msg = validation.magnetometer.valid ? 'magnetometer valid' : 'magnetometer invalid';
             } else if (color.n0000) {
-                validation.color0000 = { ...color.n0000, validationDate };
+                validation.color0000 = { ...color.n0000, validationDate, valid: validate_color_0000(color.n0000.data) };
+                msg = validation.color0000.valid ? 'color 0000 valid' : 'color 0000 invalid';
             } else if (color.n0202) {
-                validation.color0202 = { ...color.n0202, validationDate };
+                validation.color0202 = { ...color.n0202, validationDate, valid: validate_color_0202(color.n0202.data) };
+                msg = validation.color0202.valid ? 'color 0202 valid' : 'color 0202 invalid';
             } else if (color.n0218) {
-                validation.color0218 = { ...color.n0218, validationDate };
+                validation.color0218 = { ...color.n0218, validationDate, valid: validate_color_0218(color.n0218.data) };
+                msg = validation.color0218.valid ? 'color 0218 valid' : 'color 0218 invalid';
             }
-            validated = device_validated(validation);
+            validated = validation.magnetometer.valid && validation.color0000.valid && validation.color0202.valid && validation.color0218.valid;
             const device = {
                 ...response.data,
                 validated,
@@ -1085,7 +1087,7 @@ const update_validation = (callback, eventName, deviceId, magnetometer, color) =
             return saveDocument(device);
         })
         .then(() => {
-            send_response(callback, deviceId, eventName, 'SUCCESS', validated ? 'validated' : 'not validated');
+            send_response(callback, deviceId, eventName, 'SUCCESS', `${validated ? 'validated device' : 'device not validated'} – ${msg}`);
         })
         .catch((error) => {
             if (error.message) {
